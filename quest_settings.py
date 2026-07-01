@@ -4,14 +4,14 @@ import os
 import mod_engine
 from language_settings import language_strings
 from save_engine import my_games_path
+from utils import simple_list
 
 def read_quest_settings():
     with open(quest_settings_path, 'r') as f:
         return json.load(f)
 
 
-def simple_list(raw_list):
-    return (raw_list if isinstance(raw_list, list) else [raw_list]) if raw_list != '' else []
+# simple_list imported from utils
 
 print("Loading Quest settings")
 quest_settings_path = os.path.join(my_games_path(), "questsettings-converted.json")

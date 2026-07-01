@@ -61,7 +61,8 @@ print("Loading mods...")
 for mod_folder in mod_folders:
     if os.path.isfile(os.path.join(mod_folder, "mods.conf")):
         # config.read(.../mods.conf)
-        config.read_string(open(os.path.join(mod_folder, "mods.conf"), 'r').read())
+        with open(os.path.join(mod_folder, "mods.conf"), 'r') as f:
+            config.read_string(f.read())
         if "mods" in config:
             #for mod_name in os.listdir(mod_folder):
             #for mod_name in mod_folders:
@@ -99,7 +100,7 @@ if settings.caching:
     except OSError as error:
         print(error)
         print("WARNING: cache directory can't be created in ", my_games_path(), ", caching is disabled, this may decrease performance and increase loading times.")
-        caching = False
+        settings.caching = False
 else:
     print("WARNING: caching is disabled by choice, this may decrease performance and increase loading times.")
 
@@ -143,8 +144,14 @@ if settings.caching:
     # Swap modded files with cache
     if settings.caching:
         for path in sorted(mod):
-            if os.path.exists(os.path.join(cache_path, get_cache_filename(path))):
-                mod[path] = lambda: read_file(os.path.join(cache_path, get_cache_filename(path)))
+            cache_file = os.path.join(cache_path, get_cache_filename(path))
+            if os.path.exists(cache_file):
+                try:
+                    file_content = read_file(cache_file)
+                    mod[path] = lambda content=file_content: content
+                except Exception as e:
+                    print(f"ERROR: Failed to preload cache file {cache_file}: {e}")
+                    mod[path] = lambda p=path: read_file(os.path.join(cache_path, get_cache_filename(p)))
             else:
                 print('ERROR: Cache miss, Cache file %s missing for original %s. ' % (get_cache_filename(path), path))
                 print("This may decrease performance and increase loading times.")

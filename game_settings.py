@@ -3,12 +3,12 @@ import json
 import os
 import random
 
-import libscrc
 from flask import session
 from datetime import datetime
 
 import mod_engine
 from save_engine import my_games_path, validate_save
+from utils import simple_list
 
 game_settings_path = os.path.join(my_games_path(), "gamesettings-converted.json")
 initial_island_path = os.path.join(my_games_path(), "allies/initial-island.json")
@@ -27,15 +27,35 @@ def read_initial_island():
 game_settings = json.loads(mod_engine.mod.get(game_settings_path)()) if game_settings_path in mod_engine.mod else read_games_settings()
 print("Gamesettings loaded: ",  len(game_settings['settings']), " setting sections loaded")
 
+# --- O(1) item lookup indices (built once at startup) ---
+_items_list = game_settings['settings']['items']['item']
+_item_by_name = {e['-name']: e for e in _items_list}
+_item_by_code = {e['-code']: e for e in _items_list}
+
 initial_island = json.loads(mod_engine.mod.get(initial_island_path)()) if initial_island_path in mod_engine.mod else read_initial_island()
 print("Initial island template", len(initial_island["objects"]), "objects loaded", len(initial_island["roads"]),
       "roads loaded")
 # game_objects = [o for o in game_objects_2 if int(o["position"].split(",")[0]) > 62 and int(o["position"].split(",")[1]) > 58]
 
-allies = {str(e["info"]["uid"] if e["info"] else e["friend"]["uid"]): e for e in
-          [json.load(open(os.path.join(root, file_name), 'r')) for root, _, file_names in os.walk(os.path.join(my_games_path() ,"allies")) for
-           file_name in
-           file_names if 'island.json' in file_name and file_name != "initial-island.json"]}
+def _load_ally_files():
+    allies_dict = {}
+    allies_dir = os.path.join(my_games_path(), "allies")
+    if not os.path.exists(allies_dir):
+        return allies_dict
+    for root, _, file_names in os.walk(allies_dir):
+        for file_name in file_names:
+            if 'island.json' in file_name and file_name != "initial-island.json":
+                file_path = os.path.join(root, file_name)
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    uid = str(data["info"]["uid"] if data["info"] else data["friend"]["uid"])
+                    allies_dict[uid] = data
+                except Exception as e:
+                    print(f"WARNING: Error loading ally file {file_path}: {e}")
+    return allies_dict
+
+allies = _load_ally_files()
 print("Ally islands")
 print("-", len(allies.keys()), "allies loaded")
 for key in allies.keys():
@@ -48,21 +68,19 @@ for key in allies.keys():
 
 
 def lookup_item_by_name(item_name):
-    try:
-        [item] = [e for e in game_settings['settings']['items']['item'] if e['-name'] == item_name]
-        return item
-    except ValueError as e:
+    item = _item_by_name.get(item_name)
+    if item is None:
         print("ERROR: Could not look up item by name", item_name)
-        raise e
+        raise ValueError(f"Item not found by name: {item_name}")
+    return item
 
 
 def lookup_item_by_code(code):
-    try:
-        [item] = [e for e in game_settings['settings']['items']['item'] if e['-code'] == code]
-        return item
-    except ValueError as e:
+    item = _item_by_code.get(code)
+    if item is None:
         print("ERROR: Could not look up item by code", code)
-        raise e
+        raise ValueError(f"Item not found by code: {code}")
+    return item
 
 
 def lookup_reference_item(cur_object):
@@ -95,8 +113,11 @@ def lookup_yield():  #TODO buildstate
 
 
 def lookup_visitor_reward(reward_name):
-    [reward] = [reward for reward in game_settings['settings']['visitorRewards']["reward"] if reward["-name"] == reward_name]
-    return reward
+    rewards = [reward for reward in game_settings['settings']['visitorRewards']["reward"] if reward["-name"] == reward_name]
+    if not rewards:
+        print("WARNING: Could not look up visitor reward", reward_name)
+        return {}
+    return rewards[0]
 
 def randomReward(item_name):
     casino = game_settings["settings"]
@@ -110,6 +131,9 @@ def randomReward(item_name):
         building_list.append(building["-item"])
 
     reward_list = [e for e in casino["casino"]["rewards"] if e['-item'] == given_item]
+    if not reward_list:
+        print(f"WARNING: No casino rewards found for item: {given_item}. Returning fallback coins reward.")
+        return "coins", 100, "coins"
     reward_list = reward_list[0]["reward"]
 
     for item in range(len(reward_list)):
@@ -145,7 +169,7 @@ def lookup_state_machine(state_machine_name, custom_values, custom_reference_val
     reference_replacements = {e['-name']: e['-value'] for e in simple_list(custom_reference_values)}
     print('replacements', repr(replacements))
     if reference_replacements:
-        print('reference item replacements', repr(replacements))
+        print('reference item replacements', repr(reference_replacements))
         replacements = {**replacements, **reference_replacements}
         print('combined reference item replacements', repr(replacements))
 
@@ -249,12 +273,24 @@ def fetch_url_list(l):
 
 
 
-def simple_list(raw_list):
-    return (raw_list if isinstance(raw_list, list) else [raw_list]) if raw_list != '' else []
+# simple_list imported from utils
+
+
+def crc64_iso(data: bytes) -> int:
+    crc = 0xFFFFFFFFFFFFFFFF
+    poly = 0xD800000000000000
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            if crc & 1:
+                crc = (crc >> 1) ^ poly
+            else:
+                crc >>= 1
+    return crc ^ 0xFFFFFFFFFFFFFFFF
 
 
 def get_zid():
-    return libscrc.iso(session.sid.encode()) // 2048
+    return crc64_iso(session.sid.encode()) // 2048
 
 
 def get_sessions_friends(saves):

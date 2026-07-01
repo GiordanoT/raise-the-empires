@@ -14,7 +14,7 @@
 	<link rel="stylesheet" href="css/zbar.css"/>
 	<!-- JS -->
 	<script src="//code.jquery.com/jquery-3.4.1.min.js"></script>
-	<script src="//cdnjs.cloudflare.com/ajax/libs/socket.io/2.2.0/socket.io.js" integrity="sha256-yr4fRk/GU1ehYJPAs8P4JlTgu0Hdsp4ZKrx8bDEDC3I=" crossorigin="anonymous"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
 	<script src="js/socketio.js"></script>
 	<script src="js/flash.js"></script>
 	<script src="js/session.js"></script>
@@ -36,13 +36,13 @@
 		function getFriendData() {
 			console.log("getFriendData called");
 			inner_getFriendData();
-			return {{ allies | safe | default([]) }};
+			return {{ allies | tojson }};
 		}
 
 		function getAppFriendIds() {
 			console.log("getAppFriendIds called");
 			inner_getAppFriendIds();
-			return {{ app_friends | safe | default([]) }};
+			return {{ app_friends | tojson }};
 		}
 
 		function onGameLoaded(seen, popp, canvas) {

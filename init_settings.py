@@ -18,7 +18,7 @@ def read_ops():
     try:
         opts, args = getopt.getopt(sys.argv[1:], "", ["debug", "host=", "port=", "http-host=", "http-path=", "no-popup", "no-crash-log", "no-compression", "no-caching", "no-app_mode"])
     except getopt.GetoptError as e:
-        print("Error:", e.msg)
+        print("Error:", str(e))
         exit(1)
 
     for o, a in opts:

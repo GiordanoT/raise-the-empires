@@ -54,8 +54,8 @@ def click_next_state(do_click, id, meta, step, reference_item, speed_up=False, t
 
         if (do_click or tend):
             try:
-               next_state_id = state['-clickNext'] if not cancel else state['-cancelNext']
-            except:
+                next_state_id = state['-clickNext'] if not cancel else state['-cancelNext']
+            except (KeyError, TypeError):
                 next_state_id = state['-clickNext']
             if reference_item != cur_object.get('referenceItem'):
                 state_machine = lookup_state_machine(game_item['stateMachineValues']['-stateMachineName'],
@@ -151,7 +151,7 @@ def do_state_rewards(state, reference_item, meta, playback_tend=False):
     player['xp'] += int(state.get('-xp', 0))
     energy = int(state.get('-energy', 0))
     if playback_tend:
-        energy = max(energy, 0);
+        energy = max(energy, 0)
     player['energy'] += energy
     player['cash'] += int(state.get('-cash', 0))
     player['socialXpGood'] += int(state.get('-socialXpGood', 0))

@@ -98,7 +98,7 @@ def govt_fixer():
 
     for decoration in session['user_object']["userInfo"]["world"]["objects"]:
         if "crewInfo" not in decoration and decoration["itemName"] in govt_staff \
-            and int(decoration.get("state")) >= 8 :
+            and int(decoration.get("state", 0)) >= 8 :
 
             for reapet_number in range(govt_staff.get(decoration["itemName"])):
                 decoration["crewInfo"] = decoration.get("crewInfo", []) + [-1]

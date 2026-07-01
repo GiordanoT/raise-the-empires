@@ -21,7 +21,7 @@ xmldiff==2.7.0
 jsonpatch==1.33
 py3amf==0.8.10
 tqdm==4.67.1
-libscrc
 msgspec==0.20.0
+
 
 pytest==8.3.4

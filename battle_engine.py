@@ -54,7 +54,15 @@ def battle_complete_response(params):
 
         hit = roll >= direct
 
-        base_damage = 25 # TODO tier difference & increments
+        # Calculate base damage dynamically using unit tiers
+        attacker_unit = friendlies[player_unit_id] if player_turn else baddies[enemy_unit_id]
+        defender_unit = baddies[enemy_unit_id] if player_turn else friendlies[player_unit_id]
+        
+        attacker_tier = int(attacker_unit.get("unit", {}).get("-tier", "1"))
+        defender_tier = int(defender_unit.get("unit", {}).get("-tier", "1"))
+        
+        base_damage = 25 + 5 * (attacker_tier - 1) + 3 * (attacker_tier - defender_tier)
+        base_damage = max(base_damage, 5)
 
         if player_turn:
             damage = base_damage * (3 * friendly_max_strength + baddie_strength) / (3 * baddie_strength + friendly_max_strength)
@@ -130,7 +138,7 @@ def battle_complete_response(params):
 
     process_consumable_end_turn(active_consumables, baddie_strengths, friendly_strengths, player_turn)
     handle_win(baddie_strengths, meta, params, friendlies, friendly_strengths)
-    handle_loss(friendly_strengths)
+    handle_loss(friendly_strengths, friendlies, params)
 
     report_battle_log(friendly_strengths, baddie_strengths, player_turn, player_unit_id, enemy_unit_id, active_consumables)
     if not player_turn:
@@ -191,9 +199,22 @@ def apply_dot_damage(consumable, selected_unit, strengths, target_description):
                 print(target_description, selected_unit, "down by consumable")
 
 
-def handle_loss(friendly_strengths):
+def update_player_fleet_losses(friendly_strengths, friendlies, params):
+    fleet_name = params.get('fleet')
+    if not fleet_name:
+        fleet_name = get_last_fleet_name()
+    
+    if 'fleets' in session and fleet_name in session["fleets"]:
+        alive_indices = [i for i, hp in enumerate(friendly_strengths) if hp > 0]
+        session["fleets"][fleet_name] = [format_player_fleet(friendlies[i]["-code"]) for i in alive_indices]
+        print(f"Combat losses: updated fleet '{fleet_name}'. Remaining units: {session['fleets'][fleet_name]}")
+
+
+def handle_loss(friendly_strengths, friendlies, params):
     if sum(friendly_strengths) == 0:
         print("Player defeated")
+        session["last_battle"] = session["battle"]
+        update_player_fleet_losses(friendly_strengths, friendlies, params)
         session["battle"] = None
 
 
@@ -201,6 +222,7 @@ def handle_win(baddie_strengths, meta, params, friendlies, friendly_strengths):
     if sum(baddie_strengths) == 0:
         print("Enemy defeated")
         session["last_battle"] = session["battle"]
+        update_player_fleet_losses(friendly_strengths, friendlies, params)
 
         replaying = session["battle"][3].replaying
         battle_island = session["battle"][3].island
@@ -272,25 +294,39 @@ def handle_win(baddie_strengths, meta, params, friendlies, friendly_strengths):
 
 
 def neighbor_repelled(enemy_fleet):
-    [save] = [save for save in get_saves() if
+    saves = [save for save in get_saves() if
               str(save['user_object']["userInfo"]["player"]["uid"]) == str(enemy_fleet.get("invaded_uid"))]
+    if not saves:
+        print(f"WARNING: neighbor_repelled: no save found for uid={enemy_fleet.get('invaded_uid')}")
+        return
+    save = saves[0]
     save['user_object']["pvp"]["invaders"]["u" + str(enemy_fleet.get("uid"))]["dID"] = get_zid()
     store_session(save)
 
 
 def invasion_complete(enemy_fleet_uid, params, friendlies, friendly_strengths):
-    [save] = [save for save in get_saves() if
+    saves = [save for save in get_saves() if
               str(save['user_object']["userInfo"]["player"]["uid"]) == str(enemy_fleet_uid)]
+    if not saves:
+        print(f"WARNING: invasion_complete: no save found for uid={enemy_fleet_uid}")
+        return
+    save = saves[0]
     save['user_object']["pvp"]["invaders"]["u" + str(get_zid())]["status"] = 2
     save['user_object']["pvp"]["invaders"]["u" + str(get_zid())]["attacker_fleet"] = [format_player_fleet(friendlies[i]["-code"]) for i in get_alive_unit_index(friendly_strengths)]
     store_session(save)
 
 
 def cancel_unstarted_invasions():
+    modified = False
     for save in get_saves():
         if save['user_object']["pvp"]["invaders"].get("u" + str(get_zid()), {}).get("status") == 1:
             del save['user_object']["pvp"]["invaders"]["u" + str(get_zid())]
-            store_session(save)
+            store_session(save, commit=False)
+            modified = True
+    if modified:
+        from save_engine import db, invalidate_saves_cache
+        db.session.commit()
+        invalidate_saves_cache()
 
 
 def get_next_fleet(fleet_name):
@@ -388,8 +424,8 @@ def init_battle(params):
                 friendlies = [lookup_item_by_code(friendly.split(',')[0]) for friendly in
                               session['fleets'][fleet_or_name]]
                 if get_next_fleet_name(fleet_or_name) not in session['fleets']:
-                    baddies = [lookup_item_by_code(baddy.split(',')[0]) for sub_fleet in
-                               simple_list(session['fleets']['FleetName'])
+                    enemy_fleets = [v for k, v in session['fleets'].items() if isinstance(v, dict) and v.get('name') == "FleetName"]
+                    baddies = [lookup_item_by_code(baddy.split(',')[0]) for sub_fleet in enemy_fleets
                                for baddy in sub_fleet["units"]]
                 else:
                     baddies = [lookup_item_by_code(baddy[1:]) for sub_fleet in
@@ -416,11 +452,17 @@ def init_battle(params):
                                       session['fleets'][get_friendly_by_ally_fleet(params['name'])]]
                         break
 
-                enemy_fleet = lookup_item_by_code(task["_item"])
-                baddies = [lookup_item_by_code(baddie_slot["-item"]) for baddie_slot in simple_list(enemy_fleet["baddie"])]
-                if not friendlies:
-                    friendlies = [lookup_item_by_code(friendly[1:]) for friendly, count in task["fleet"].items() for i in
-                                  range(int(count))]
+                if task:
+                    enemy_fleet = lookup_item_by_code(task["_item"])
+                    baddies = [lookup_item_by_code(baddie_slot["-item"]) for baddie_slot in simple_list(enemy_fleet["baddie"])]
+                    if not friendlies:
+                        friendlies = [lookup_item_by_code(friendly[1:]) for friendly, count in task["fleet"].items() for i in
+                                      range(int(count))]
+                else:
+                    enemy_fleet = None
+                    baddies = []
+                    if not friendlies:
+                        friendlies = []
         elif params['target'].startswith('fleet'):
             baddies = [lookup_item_by_code(baddy[1:]) for sub_fleet in simple_list(session['fleets'][params['target']])
                        for baddy, count in sub_fleet.items()
@@ -429,8 +471,8 @@ def init_battle(params):
                           session['fleets'][params['fleet']]]
         elif params['target'] == "FleetName":
             print("Invader target")
-            baddies = [lookup_item_by_code(baddy.split(',')[0]) for sub_fleet in
-                       simple_list(session['fleets']['FleetName'])
+            enemy_fleets = [v for k, v in session['fleets'].items() if isinstance(v, dict) and v.get('name') == "FleetName"]
+            baddies = [lookup_item_by_code(baddy.split(',')[0]) for sub_fleet in enemy_fleets
                        for baddy in sub_fleet["units"]]
             friendlies = [lookup_item_by_code(friendly.split(',')[0]) for friendly in
                           session['fleets'][params['fleet']]]
@@ -463,9 +505,10 @@ def init_battle(params):
             baddie_strengths = [get_unit_max_strength(baddie, False, params) for baddie in baddies]
             friendly_strengths = [get_unit_max_strength(friendly, True) for friendly in friendlies]
             active_consumables = []
-            defenseshield_upgrade_activate(friendlies, active_consumables)
-            session["battle"] = (friendly_strengths, baddie_strengths, active_consumables,
-                                 BattleContext() if not has_battle() else session["battle"][3])
+            enemy_res = get_enemy_research(params)
+            defenseshield_upgrade_activate(friendlies, active_consumables, baddies, enemy_res)
+            session["battle"] = [friendly_strengths, baddie_strengths, active_consumables,
+                                 BattleContext() if not has_battle() else session["battle"][3]]
         else:
             (friendly_strengths, baddie_strengths, active_consumables, battle_context) = session["battle"]
             if baddie_strengths is None:  # survival mode
@@ -606,20 +649,16 @@ def spawn_fleet(params):
 def next_campaign_response(params):
     meta = {"newPVE": 0}
 
-    # map_item = lookup_item_by_code(map["map"])
-    #
-    # if map["map"] not in session['campaign'] or not session['campaign'][map["map"]]:
-    #     session['campaign'][map["map"]] = {"island": -1}
-    #
-    # session['campaign'][map["map"]]["island"] += 1
-    #
-    # island = session['campaign'][map["map"]]["island"]
-    #
+
 
     map_name, island, map_item = get_current_island(params)
 
     if island is None:
         island = 0
+
+    if map_item and "island" in map_item:
+        if island >= len(map_item["island"]):
+            island = len(map_item["island"]) - 1
 
     next_campaign_response = {"errorType": 0, "userId": 1, "metadata": meta,
                               "data": {"map": params["map"], "island": island}}
@@ -870,7 +909,7 @@ def assign_consumable_response(params):
                         level = neighbor["level"]
         valid_consumables = [c for c in consumables if "-secondary" not in c and \
                              int(c.get("requiredLevel", "0")) <= level and \
-                             (damaged or c["consumable"].get("-target") == 'enemy' or c["consumable"].get("-target") == 'enemy' or int(c["consumable"].get("-di","0")) >= 0) and \
+                             (damaged or c["consumable"].get("-target") == 'enemy' or c["consumable"].get("-target") == 'ally' or int(c["consumable"].get("-di","0")) >= 0) and \
                              'requiredDate' not in c and \
                              c["consumable"].get("-allypower", "true") != "false"]
 
@@ -988,7 +1027,7 @@ def assign_consumable_response(params):
             process_consumable_end_turn(active_consumables, baddie_strengths, friendly_strengths, True)
 
         handle_win(baddie_strengths, meta, params, friendlies, friendly_strengths)
-        handle_loss(friendly_strengths)
+        handle_loss(friendly_strengths, friendlies, params)
 
         report_battle_log(friendly_strengths, baddie_strengths, not enemy_turn, None, None,
                           active_consumables)
@@ -1214,12 +1253,7 @@ def get_unit_max_strength(unit, ally, params=None):
     return strength
 
 
-# def get_current_island(params):
-#     if params and 'map' in params and params['map'] and params['map'][0] == 'C':
-#         if 'campaign' in session and params['map'] in session['campaign']:
-#             map_item = lookup_item_by_code(params["map"])
-#             return session['campaign'][params['map']]["island"], map_item
-#     return None, None
+
 
 def get_current_island(params):
     # Campaign 01
@@ -1252,12 +1286,7 @@ def set_active_island_by_map(map_name, island_id):
         campaign['active'][map_name]["status"] = status
 
 
-#
-# def get_current_island_from_session():
-#     campaign = session['user_object']['userInfo']['world']['campaign']
-#     if 'current' in campaign:
-#         return get_active_island_by_map()
-#     return None, None
+
 
 
 def apply_map_mod_strength(unit, strength, strengths):
@@ -1353,12 +1382,54 @@ def defenseshield_activate(friendlies, active_consumables, selected_consumable):
         print('ally: ' , i)
 
 
-def defenseshield_upgrade_activate(friendlies, active_consumables):
+def get_enemy_research(params):
+    enemy_uid = None
+    if params:
+        if 'target' in params and isinstance(params['target'], str) and params['target'].startswith('fleet'):
+            parts = params['target'].split('_')
+            if len(parts) > 1:
+                enemy_uid = parts[1]
+        elif params.get('target') == "FleetName" and 'fleets' in session:
+            enemy_fleets = [v for k, v in session['fleets'].items() if isinstance(v, dict) and v.get('name') == "FleetName"]
+            if enemy_fleets:
+                enemy_uid = enemy_fleets[0].get('uid')
+        elif params.get('name') == "FleetName" and 'fleets' in session:
+            enemy_fleets = [v for k, v in session['fleets'].items() if isinstance(v, dict) and v.get('name') == "FleetName"]
+            if enemy_fleets:
+                enemy_uid = enemy_fleets[0].get('uid')
+            
+    if enemy_uid:
+        saves = [s for s in get_saves() if str(s['user_object']["userInfo"]["player"]["uid"]) == str(enemy_uid)]
+        if saves:
+            return saves[0]['user_object']["userInfo"]["world"].get("research", {})
+    return None
+
+
+def handle_shield_upgrades_for_enemy(units, unit_id, enemy_research):
+    if not enemy_research:
+        return False
+    upgrades = enemy_research.get(units[unit_id]["-code"], [])
+    for upgrade in upgrades:
+        upgrade_item = lookup_item_by_code(upgrade)
+        mod_shield = upgrade_item["modifier"].get("-shields")
+        if mod_shield:
+            return True
+    return False
+
+
+def defenseshield_upgrade_activate(friendlies, active_consumables, baddies=None, enemy_research=None):
     for i in range(len(friendlies)):
         if handle_shield_upgrades(friendlies, i):
             selected_consumable = lookup_item_by_code('N75')
             active_consumables.append((selected_consumable, ('ally',i), 9999999))
             print('ally shielded: ' , i)
+            
+    if baddies and enemy_research:
+        for i in range(len(baddies)):
+            if handle_shield_upgrades_for_enemy(baddies, i, enemy_research):
+                selected_consumable = lookup_item_by_code('N75')
+                active_consumables.append((selected_consumable, ('enemy',i), 9999999))
+                print('enemy shielded: ' , i)
 
 
 

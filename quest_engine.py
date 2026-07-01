@@ -7,6 +7,7 @@ from game_settings import game_settings, lookup_item_by_code, lookup_state_machi
     allies, get_sessions_friends, lookup_items_by_unit_class
 from quest_settings import quest_settings, prequels
 from save_engine import lookup_objects_by_item_name, create_backup, get_saves
+from utils import simple_list
 
 
 def merge_quest_progress(qc, output_list, label):
@@ -24,8 +25,12 @@ def lookup_quest(name):
 
 def new_quest(quest):
     # progress = [0 for e in quest['tasks']]
-    progress, completes = map(list, zip(*[prepopulate_task(e) for e in get_tasks(quest)]))
-    return {"name": quest['_name'], "complete": all(completes), "expired": False, "progress": progress, "completedTasks": reduce((lambda x, y: x << 1 | y), [False] + completes[::-1])}
+    tasks = get_tasks(quest)
+    if not tasks:
+        return {"name": quest['_name'], "complete": True, "expired": False, "progress": [], "completedTasks": 0}
+    progress, completes = map(list, zip(*[prepopulate_task(e) for e in tasks]))
+    completed_tasks = reduce((lambda x, y: x << 1 | y), [False] + completes[::-1]) if completes else 0
+    return {"name": quest['_name'], "complete": all(completes), "expired": False, "progress": progress, "completedTasks": completed_tasks}
 
 
 def progress_quest_task(name, index):
@@ -376,8 +381,7 @@ def get_tasks(quest):
     tasks = raw_tasks if isinstance(raw_tasks, list) else [raw_tasks]
     return tasks
 
-def simple_list(raw_list):
-    return (raw_list if isinstance(raw_list, list) else [raw_list]) if raw_list != '' else []
+# simple_list imported from utils
 
 def activate_sequels(session_quest, new_quests, meta):
     raw_sequels = lookup_quest(session_quest['name'])['sequels']
@@ -628,17 +632,28 @@ def progress_useAOA_consumable(item):
 
 
 
-def progress_useGeneral_consumable(item,enemy_turn): #DONT USE THIS FUNCTION FOR SOMETHING ELSE
-    if enemy_turn == False:
+def progress_useGeneral_consumable(item, enemy_turn): #DONT USE THIS FUNCTION FOR SOMETHING ELSE
+    def _check(task, progress, i, *args):
+        if task["_action"] != "useConsumable" or item is None or enemy_turn != False:
+            return False
+        if not (progress_parameter_implies("_type", item.get("-type", ""))(task, progress, i, *args) and
+                progress_parameter_implies("_subtype", item.get("-subtype", ""))(task, progress, i, *args) and
+                progress_parameter_implies_contains("_item", item["-code"])(task, progress, i, *args)):
+            return False
+        # Side-effect: only decrement inventory when condition is actually met
         item_inventory = session['user_object']["userInfo"]["player"]["inventory"]["items"]
         if item["-subtype"] == "secondary":
-            session['user_object']["userInfo"]["player"]["mana"]["value"]-=int(item["consumable"]["-mana"])
+            session['user_object']["userInfo"]["player"]["mana"]["value"] -= int(item["consumable"]["-mana"])
         elif session['user_object']["userInfo"]["player"]["tutorialProgress"] != "tut_step_powerUpPowerUsed" and \
              session['user_object']["userInfo"]["player"]["tutorialProgress"] != "tut_step_powerUpPowerSelected":
-                item_inventory[item["-code"]] -= 1
-    return lambda task, progress, i, *args: \
-        task["_action"] == "useConsumable"  and item is not None and enemy_turn == False and \
-        progress_parameter_implies("_type", item.get("-type", ""))(task, progress, i, *args) and \
-        progress_parameter_implies("_subtype", item.get("-subtype", ""))(task, progress, i, *args) and \
-        progress_parameter_implies_contains("_item", item["-code"])(task, progress, i, *args)
+            item_inventory[item["-code"]] -= 1
+        return True
+    return _check
+
+
+def progress_visit(visited_uid):
+    return all_lambda(
+        progress_action("visit"),
+        lambda task, *args: (task.get("_advisorOnly") != "true" or int(visited_uid) == -1)
+    )
 

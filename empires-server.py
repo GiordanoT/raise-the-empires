@@ -19,7 +19,12 @@ if __name__ == '__main__':
     settings.read_ops()
 
 if not settings.debug:
-    me = singleton.SingleInstance()
+    try:
+        me = singleton.SingleInstance()
+    except BaseException as e:
+        if isinstance(e, KeyboardInterrupt):
+            raise
+        print(f"WARNING: Could not initialize SingleInstance lock: {e}. Continuing anyway.")
 
 if os.name == 'nt':
     os.system('color')
@@ -28,7 +33,6 @@ from save_engine import db, save_database_uri, log_path, lookup_objects_save_by_
     store_session, validate_save, InvalidSaveException, set_crash_log, my_games_path, install_path, base_path
 from save_migration import migrate, is_0_08a_preview
 from builtins import print
-from time import sleep
 from datetime import timedelta
 
 from flask import Flask, render_template, send_from_directory, request, Response, make_response, redirect
@@ -56,6 +60,8 @@ from state_machine import *
 from logger import socketio, report_tutorial_step, report_world_log, report_other_log
 import copy
 import random
+import configparser
+
 
 try:
     from flask_compress import Compress
@@ -81,7 +87,6 @@ compress = Compress() if settings.compression else None
 sess = Session()
 
 
-start = datetime.now()
 app_base_path = base_path()
 app: Flask = Flask(__name__, root_path=app_base_path)
 
@@ -91,13 +96,33 @@ app.config['SESSION_TYPE'] = 'sqlalchemy'
 app.config['SQLALCHEMY_DATABASE_URI'] = save_database_uri(app.root_path, app.instance_path)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False # Flask-SQLAlchemy has its own event notification system that gets layered on top of SQLAlchemy. To do this, it tracks modifications to the SQLAlchemy session. This option disables the modification tracking system.
 app.config['SESSION_SQLALCHEMY'] = db
-app.config['SESSION_COOKIE_HTTPONLY'] = False
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 #app.config['SESSION_SERIALIZATION_FORMAT '] = 'json' # flask-session uses msgspec by default now which makes it undepickleable
+
+# Apply compression settings to Flask app config
+if settings.compression:
+    app.config['COMPRESS_MIMETYPES'] = COMPRESS_MIMETYPES
+    app.config['COMPRESS_LEVEL'] = COMPRESS_LEVEL
+    app.config['COMPRESS_MIN_SIZE'] = COMPRESS_MIN_SIZE
+
+# Load SECRET_KEY from INI for stable sessions across restarts
+_ini_cfg = configparser.ConfigParser()
+_ini_cfg.read(os.path.join(str(base_path()), 'RaiseTheEmpires.ini'))
+app.secret_key = _ini_cfg.get('Security', 'SECRET_KEY', fallback='raisetheempires-fallback-insecure-key')
+
 app.permanent_session_lifetime = timedelta(weeks=520)
 
 MIN_ADMIN_ID = -1
 STEELE_ID = -1
 MAX_ADMIN_ID = 123
+
+@app.after_request
+def add_cache_headers(response):
+    path = request.path.lower()
+    if path.startswith('/files/') or path.startswith('/templates/') or path.endswith(('.swf', '.png', '.jpg', '.jpeg', '.gif', '.xml', '.js', '.css')):
+        response.headers['Cache-Control'] = 'public, max-age=31536000'
+    return response
+
 
 @app.route("/")
 def index():
@@ -197,7 +222,7 @@ def wipe_session():
 
 @app.route("/list_session", methods=['GET', 'POST'])
 def list_session():
-    response = get_sessions_dropdown_info(get_all_sessions())
+    response = get_sessions_dropdown_info(get_saves())
 
     dump = json.dumps(response,
                       default=lambda o: '<not serializable>', sort_keys=False, indent=2)
@@ -316,8 +341,13 @@ def patch_user_dict(path):
 @app.route("/patch/<path:path>/int/<int:value>", methods=['GET', 'POST'])
 @app.route("/patch/<path:path>/string/<value>", methods=['GET', 'POST'])
 def patch_user(path, value):
+    # Whitelist of top-level session keys that may be patched via the /patch route
+    PATCH_ALLOWED_ROOTS = {
+        'user_object', 'quests', 'fleets', 'population', 'battle',
+    }
     if 'user_object' in session:
-        if path.split('/')[0] not in ("saved", "original_save_version"):
+        root = path.split('/')[0]
+        if root in PATCH_ALLOWED_ROOTS:
             create_backup("patch")
             dictionary = session
             for p in path.split('/')[:-1]:
@@ -329,7 +359,7 @@ def patch_user(path, value):
             response = make_response(redirect('/home.html'))
             return response
         else:
-            return ("Nope! Disallowed patch root", 403)
+            return ("Nope! Disallowed patch root: " + root, 403)
     else:
         return ("Nope! You don't have a game session yet", 403)
 
@@ -337,8 +367,12 @@ def patch_user(path, value):
 @app.route("/patch/<path:path>/list/index/<int:i>/int/<int:value>", methods=['GET', 'POST'])
 @app.route("/patch/<path:path>/list/index/<int:i>/string/<value>", methods=['GET', 'POST'])
 def patch_user_list(path, i, value):
+    PATCH_ALLOWED_ROOTS = {
+        'user_object', 'quests', 'fleets', 'population', 'battle',
+    }
     if 'user_object' in session:
-        if path.split('/')[0] not in ("saved", "original_save_version"):
+        root = path.split('/')[0]
+        if root in PATCH_ALLOWED_ROOTS:
             create_backup("patch")
             dictionary = session
             for p in path.split('/'):
@@ -350,7 +384,7 @@ def patch_user_list(path, i, value):
             response = make_response(redirect('/home.html'))
             return response
         else:
-            return ("Nope! Disallowed patch root", 403)
+            return ("Nope! Disallowed patch root: " + root, 403)
     else:
         return ("Nope! You don't have a game session yet", 403)
 
@@ -362,7 +396,7 @@ def unlock_quest(value):
         new_quests=[]
         meta = {}
         new_quest_with_sequels(value, new_quests, meta, force=True)
-        merge_quest_progress(new_quests, session['quests'], "session quest")
+        merge_quest_progress(new_quests, session.get('quests', []), "session quest")
         session['saved'] = str(session.get('saved', "")) + "unlock"
 
         response = make_response(redirect('/home.html'))
@@ -390,7 +424,7 @@ def complete_quest(value):
 def remove_quest(value):
     if 'user_object' in session:
         create_backup("Remove quest " + value)
-        session['quests'] = [e for e in session['quests'] if e["name"] != value]
+        session['quests'] = [e for e in session.get('quests', []) if e["name"] != value]
         session['saved'] = str(session.get('saved', "")) + "remove"
 
         response = make_response(redirect('/home.html'))
@@ -410,8 +444,8 @@ def save_editor():
         backup_count += 1
     print("Backups present", backup_count)
 
-    incomplete_quests = [e["name"] for e in session['quests'] if e["complete"] == False]
-    complete_quests = [e["name"] for e in session['quests'] if e["complete"]]
+    incomplete_quests = [e["name"] for e in session.get('quests', []) if e["complete"] == False]
+    complete_quests = [e["name"] for e in session.get('quests', []) if e["complete"]]
 
     return render_template("save-editor.html", savegame=json.dumps(
         {
@@ -439,6 +473,8 @@ def save_savegame():
     restores = [int(key[7:]) for key in request.form.keys() if "restore" in key]
 
     if restores:
+        if "backup" not in session:
+            return ("No backup available", 400)
         save_game = session["backup"]
         for i in range(restores[0]):
             save_game = save_game["backup"]
@@ -483,23 +519,16 @@ def record_stats():
 
 @app.route("/files/empire-s.assets.zgncdn.com/assets/109338/ZGame.109338.swf")
 def flashFile():
-    # return send_from_directory_mod("assets", "ZGame.109338.swf")
     return send_from_directory_mod("assets", "ZGame.109338_tracer2.swf")  # regular one
-    # return send_from_directory_mod("assets", "ZGame.109338_tracer2a.swf")  # with extra debug logging
 
 
 @app.route("/gameSettings.xml")
 def game_settings_file():
-    # return send_from_directory_mod("assets/32995", "gameSettings.xml")
-    # return send_from_directory_mod("assets/32995", "gameSettings.xml")
-    # return send_from_directory_mod("assets/29oct2012", "gameSettings.xml")
-    # return send_from_directory_mod("assets/29oct2012", "gameSettings_placeholders.xml")
     return send_from_directory_mod("assets/29oct2012", "gameSettings_with_fixes.xml")
 
 
 @app.route("/127.0.0.1en_US.xml")
 def en_us_file():
-    # return send_from_directory_mod("assets/32995", "en_US.xml")
     return send_from_directory_mod("assets/29oct2012", "en_US.xml")
 
 
@@ -692,8 +721,11 @@ def new_player_page():
 
 @app.route("/chooseavatar/<path:path>", methods=['GET', 'POST'])
 def choose_avatar(path):
-    avatar = path
-    session['profilePic'] = avatar
+    # Validate that the avatar path is in the known available avatars
+    avail = get_avail_avatars()
+    if path not in avail:
+        return ("Nope! Avatar not in allowed list", 403)
+    session['profilePic'] = path
     response = make_response(redirect('/home.html'))
     return response
 
@@ -730,12 +762,95 @@ def send_sol_assets_alternate(path):
     return send_from_directory_mod('assets/sol_assets_octdict/assets', path)
 
 
-def send_from_directory_mod(directory, filename, **options):
-    absolute_directory = os.path.join(install_path(), directory)
-    path = safe_join(os.fspath(absolute_directory), os.fspath(filename))
-    print(path)
+_assets_ram_cache = {}
 
-    return mod_engine.mod.get(path)() if path in mod_engine.mod else send_from_directory(absolute_directory, filename, **options)
+def prewarm_assets_cache():
+    print("Pre-warming assets memory cache...")
+    common_assets = [
+        ("assets", "ZGame.109338_tracer2.swf"),
+        ("assets/29oct2012", "gameSettings_with_fixes.xml"),
+        ("assets/29oct2012", "questSettings_with_fixes.xml"),
+        ("assets/29oct2012", "en_US.xml"),
+        ("assets/sol_assets_octdict/assets/game/buildables", "Buildables_Icons_0.swf"),
+        ("assets/sol_assets_octdict/assets/displays/screens", "CityScreen.swf"),
+    ]
+    for directory, filename in common_assets:
+        absolute_directory = os.path.normpath(os.path.join(app.root_path, directory))
+        full_path = os.path.normpath(os.path.join(absolute_directory, filename))
+        if os.path.exists(full_path) and os.path.isfile(full_path):
+            try:
+                with open(full_path, 'rb') as f:
+                    content_bytes = f.read()
+                import mimetypes
+                mime_type, _ = mimetypes.guess_type(full_path)
+                if not mime_type:
+                    if filename.endswith('.swf'):
+                        mime_type = 'application/x-shockwave-flash'
+                    else:
+                        mime_type = 'application/octet-stream'
+                _assets_ram_cache[full_path] = (content_bytes, mime_type)
+                print(f" -> Cached {filename} ({len(content_bytes)} bytes)")
+            except Exception as e:
+                print(f" -> Error pre-warming {filename}: {e}")
+    print("Assets memory cache pre-warmed.")
+
+
+def send_from_directory_mod(directory, filename, **options):
+    absolute_directory = os.path.normpath(os.path.join(app.root_path, directory))
+    path = os.path.join(directory, filename)
+    if path in mod_engine.mod:
+        return mod_engine.mod.get(path)()
+        
+    full_path = os.path.normpath(os.path.join(absolute_directory, filename))
+    
+    # Directory Traversal Protection
+    real_base = os.path.abspath(absolute_directory)
+    real_path = os.path.abspath(full_path)
+    try:
+        if os.path.commonpath([real_base, real_path]) != real_base:
+            return "Forbidden", 403
+    except ValueError:
+        return "Forbidden", 403
+        
+    if full_path in _assets_ram_cache:
+        content_bytes, mime_type = _assets_ram_cache[full_path]
+        return Response(content_bytes, mimetype=mime_type)
+        
+    if not os.path.exists(full_path):
+        if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+            print(f"WARNING: Image asset missing: {path}. Serving placeholder instead.")
+            placeholder_dir = os.path.join(app.root_path, "templates/img")
+            placeholder_file = "blank.png"
+            if os.path.exists(os.path.join(placeholder_dir, placeholder_file)):
+                return send_from_directory(placeholder_dir, placeholder_file, **options)
+        elif filename.lower().endswith('.swf'):
+            print(f"WARNING: SWF asset missing: {path}. Serving fallback SWF instead.")
+            fallback_dir = os.path.join(app.root_path, "assets/sol_assets_octdict/assets/game/quests")
+            fallback_file = "Quests_CombatCompanions_0.swf"
+            if os.path.exists(os.path.join(fallback_dir, fallback_file)):
+                return send_from_directory(fallback_dir, fallback_file, **options)
+                
+    # Read-through cache for other assets to speed them up on subsequent hits
+    if os.path.exists(full_path) and os.path.isfile(full_path):
+        try:
+            with open(full_path, 'rb') as f:
+                content_bytes = f.read()
+            import mimetypes
+            mime_type, _ = mimetypes.guess_type(full_path)
+            if not mime_type:
+                if filename.endswith('.swf'):
+                    mime_type = 'application/x-shockwave-flash'
+                else:
+                    mime_type = 'application/octet-stream'
+            
+            # Only cache files smaller than 10MB to prevent memory explosion
+            if os.path.getsize(full_path) < 10 * 1024 * 1024:
+                _assets_ram_cache[full_path] = (content_bytes, mime_type)
+            return Response(content_bytes, mimetype=mime_type)
+        except Exception as e:
+            print(f"Error reading file for RAM cache: {e}")
+
+    return send_from_directory(absolute_directory, filename, **options)
 
 
 @app.route('/files/empire-s.assets.zgncdn.com/assets/109338/127.0.0.1flashservices/gateway.php', methods=['POST'])
@@ -1485,32 +1600,23 @@ def user_response():
             print("WARNING: Save game was saved with version", session.get('save_version'), "while game is version",
                   version)
 
-        qc = session['quests']
+        qc = session.get('quests', [])
 
         user["neighbors"] = get_allies_info()
 
-        meta = {"newPVE": 0, "QuestComponent": [e for e in session['quests'] if e["complete"] == False]}
+        meta = {"newPVE": 0, "QuestComponent": [e for e in session.get('quests', []) if e["complete"] == False]}
 
     else:
         user = copy.deepcopy(init_user())
         print("initialized new")
         session['user_object'] = user
-        # qc = [{"name": "Q0516", "complete":False, "expired":False,"progress":[0],"completedTasks":0}]
         session['quests'] = []
 
         session['save_version'] = version
         session['original_save_version'] = version
         session['saved_on'] = datetime.now().timestamp()
-        meta = {"newPVE": 0, "QuestComponent": [e for e in session['quests'] if e["complete"] == False]}
+        meta = {"newPVE": 0, "QuestComponent": [e for e in session.get('quests', []) if e["complete"] == False]}
         new_quest_with_sequels("Q0516", new_quests, meta)
-
-    # session['user_object']["userInfo"]["player"]["tutorialProgress"] = "tut_step_krunsch1Battle2Speeech" #'tut_step_inviteFriendsViral'
-    # session['user_object']["userInfo"]["player"]["tutorialProgress"] = 'tut_step_remindCombatUIWaitForPreBattleUI'
-    # session['user_object']["userInfo"]["player"]["tutorialProgress"] = 'tut_step_remindCombatUIClearCircles'
-    # session['user_object']["userInfo"]["player"]["lastEnergyCheck"] = datetime.now().timestamp()
-    # save migration only
-    # if "lastEnergyCheck" not in session['user_object']["userInfo"]["player"]:
-    #     session['user_object']["userInfo"]["player"]["lastEnergyCheck"] = datetime.now().timestamp()
 
     replenish_energy()
 
@@ -1520,9 +1626,7 @@ def user_response():
 
     if "market" not in session:
         session["market"] = {}
-    # #temp migration
-    # session['user_object']["experiments"]["empire_store_sorting_rev_enhanced"] = 0
-    # session['user_object']["experiments"]["empires_shop_improvements"] = 0
+        
     session['user_object']["experiments"]["empire_combataicancritical"] = 2
     unlock_expansion(156)
     unlock_expansion(157)
@@ -1530,23 +1634,6 @@ def user_response():
     unlock_expansion(182)
     unlock_expansion(206)
     unlock_expansion(207)
-    # battle_status = 0
-    # island = 2
-    # replay_island = 0
-    #
-    # status_campaign = battle_status | replay_island << 8 | island << 20
-    # status_campaign_2 = battle_status | replay_island << 8 | 5 << 20
-    # # #
-    # user['userInfo']['world']['campaign'] = {"current": "camp001", "active":{'C000': {"status": status_campaign, "fleets":[]},
-    #                                                                        'C003': {"status": status_campaign_2, "fleets":[]}}, "mastery": {}}
-
-    # user['userInfo']['world']['campaign'] =  {"current": "camp001", "active": {}, "mastery": {}}
-    # user['userInfo']['world']['campaign'] =  {"current": "camp001", "active": {'C000': {"status": 1 << 20, "fleets":[]}}, "mastery": {}}
-
-    # session['campaign'] = {}
-    # session['campaign']['C003'] = {'island':4} #will receive a next "island": 1
-
-    # if ""B01": 20"
 
 
     item_inventory = session['user_object']["userInfo"]["player"]["inventory"]["items"]
@@ -1592,14 +1679,13 @@ def user_response():
         print("Trying migration")
         migrate(meta, session.get('save_version'), version)
 
-    sleep(0.05)  # bugfix required delay for loading entire screen
 
     # for e in session['user_object']["userInfo"]["world"]["objects"]:
     #     e['lastUpdated'] = 1308211628  #1 minute earlier to test
-    user["completedQuests"] = [e["name"] for e in session['quests'] if e["complete"] == True]
+    user["completedQuests"] = [e["name"] for e in session.get('quests', []) if e["complete"] == True]
 
     merge_quest_progress(new_quests, meta['QuestComponent'], "output quest")
-    merge_quest_progress(new_quests, session['quests'], "session quest")
+    merge_quest_progress(new_quests, session.get('quests', []), "session quest")
     user_response = {"errorType": 0, "userId": get_zid(), "metadata": meta,
                      # {"name": "Q0531", "complete":False, "expired":False,"progress":[0],"completedTasks":0},{"name": "QW120", "complete":False, "expired":False,"progress":[0],"completedTasks":0}
                      "data": user}
@@ -1660,8 +1746,12 @@ def neighbor_invader_response(uid):
 
 
 def neighbor_repel_challenge_response(params):
-    [save] = [save for save in get_saves() if
+    saves = [save for save in get_saves() if
               str(save['user_object']["userInfo"]["player"]["uid"]) == str(params[0])]
+    if not saves:
+        print(f"WARNING: neighbor_repel_challenge_response: no save found for uid={params[0]}")
+        return {"errorType": 1, "userId": 1, "metadata": {"newPVE": 0}, "data": None}
+    save = saves[0]
 
     neigbor_invader_response = {"errorType": 0, "userId": 1, "metadata": {"newPVE": 0},
                         "data": next((invader_entry(k[1:] + "_" + str(params[0])) for k, v in save['user_object']["pvp"]["invaders"].items() if k == "u" + str(params[1])), None)}
@@ -1783,7 +1873,7 @@ def tutorial_response(step, sequence, endpoint):
     if step == 'tut_step_inviteFriendsEndPauseTutorial':
         handle_quest_progress(meta, progress_neighbor_count())
 
-    merge_quest_progress(meta['QuestComponent'] if 'QuestComponent' in meta else [], session['quests'], "session quest")
+    merge_quest_progress(meta['QuestComponent'] if 'QuestComponent' in meta else [], session.get('quests', []), "session quest")
     session['user_object']["userInfo"]["player"]["tutorialProgress"] = step  # TODO: revert step when loading if needed
 
     report_tutorial_step(step, meta['QuestComponent'] if 'QuestComponent' in meta else None, meta['newPVE'], sequence,
@@ -2036,7 +2126,11 @@ def random_fleet_challenge_response(host_uid):
     #     "hp": None
     # }
 
-    [save] = [save for save in get_saves() if str(save['user_object']["userInfo"]["player"]["uid"]) == str(host_uid)]
+    saves = [save for save in get_saves() if str(save['user_object']["userInfo"]["player"]["uid"]) == str(host_uid)]
+    if not saves:
+        print(f"WARNING: random_fleet_challenge_response: no save found for uid={host_uid}")
+        return {"errorType": 1, "userId": 1, "metadata": {"newPVE": 0}, "data": None}
+    save = saves[0]
     defender_fleet = save['user_object']["pvp"]["invaders"]["u" + str(get_zid())]["defender_fleet"]
 
     subtype = lookup_item_by_code(defender_fleet[0].split(',')[0])["-subtype"]
@@ -2118,8 +2212,12 @@ def random_enemy_fleet_challenge_response(enemy_fleet_id):
     if len(enemy_fleet_id.split("_")) <= 2:
         attacker_fleet = session['user_object']["pvp"]["invaders"]["u" + enemy_fleet_id.split("_")[1]].get('attacker_fleet', placeholder_fleet)
     else:
-        [save] = [save for save in get_saves() if
+        saves = [save for save in get_saves() if
                   str(save['user_object']["userInfo"]["player"]["uid"]) == str(enemy_fleet_id.split("_")[2])]
+        if not saves:
+            print(f"WARNING: random_enemy_fleet_challenge_response: no save found for uid={enemy_fleet_id.split('_')[2]}")
+            return {"errorType": 1, "userId": 1, "metadata": {"newPVE": 0}, "data": None}
+        save = saves[0]
         attacker_fleet = save['user_object']["pvp"]["invaders"]["u" + enemy_fleet_id.split("_")[1]].get('attacker_fleet', placeholder_fleet)
 
     subtype = lookup_item_by_code(attacker_fleet[0].split(',')[0])["-subtype"]
@@ -2177,7 +2275,11 @@ def load_challenge_response(param):
 def occupation_place_response(params):
     cancel_unstarted_invasions()
 
-    [save] = [save for save in get_saves() if str(save['user_object']["userInfo"]["player"]["uid"]) == str(params[0])]
+    saves = [save for save in get_saves() if str(save['user_object']["userInfo"]["player"]["uid"]) == str(params[0])]
+    if not saves:
+        print(f"WARNING: occupation_place_response: no save found for uid={params[0]}")
+        return {"errorType": 1, "userId": 1, "metadata": {"newPVE": 0}, "data": []}
+    save = saves[0]
     occupied_objects = lookup_objects_save_by_position(save, params[1], params[2], 5)
     # todo defenders from larger area?
     # occupied_objects_double = lookup_objects_save_by_position(save, params[1] - 3, params[2] - 3, 11)
@@ -2215,7 +2317,11 @@ def occupation_place_response(params):
 
 
 def pillage_response(params):
-    [save] = [save for save in get_saves() if str(save['user_object']["userInfo"]["player"]["uid"]) == str(params[0])]
+    saves = [save for save in get_saves() if str(save['user_object']["userInfo"]["player"]["uid"]) == str(params[0])]
+    if not saves:
+        print(f"WARNING: pillage_response: no save found for uid={params[0]}")
+        return {"errorType": 1, "userId": 1, "metadata": {"newPVE": 0}, "data": []}
+    save = saves[0]
     # occupied_objects = lookup_objects_save_by_position(save, params[1], params[2], 5)
     # occupied_items = [lookup_item_by_name(e["itemName"]) for e in occupied_objects]
     # defense_units = [e for e in occupied_items if "unit" in e]
@@ -2305,33 +2411,39 @@ def view_zoom_response(zoom):
 
 def load_world_response(params):
     meta = {"newPVE": 0}
-    handle_quest_progress(meta, progress_action("visit"))
+    handle_quest_progress(meta, progress_visit(params[0]))
 
-    print("world response. requested uid=", int(params[0]), session['user_object']["userInfo"]["player"]["uid"])
-    if int(params[0]) == session['user_object']["userInfo"]["player"]["uid"]:
+    requested_uid = int(params[0])
+    print("world response. requested uid=", requested_uid, session['user_object']["userInfo"]["player"]["uid"])
+    if requested_uid == session['user_object']["userInfo"]["player"]["uid"]:
         ally = session['user_object']["userInfo"]
         # qc = session['quests']
         print("reloading user from save")
     else:
         ally = copy.deepcopy(init_user()["userInfo"])
-        if int(params[0]) == STEELE_ID:
+        if requested_uid == STEELE_ID:
             ally["world"]["sizeX"] = 100
             ally["world"]["sizeY"] = 100
-        ally["player"]["uid"] = int(params[0])
-        if str(params[0]) in allies:
-            if "objects" in allies[str(params[0])]:
-                ally["world"]["objects"] = allies[str(params[0])]["objects"]
-            if "roads" in allies[str(params[0])]:
-                ally["world"]["roadData"] = allies[str(params[0])]["roads"]
+        ally["player"]["uid"] = requested_uid
+        requested_uid_str = str(requested_uid)
+        if requested_uid_str in allies:
+            if "objects" in allies[requested_uid_str]:
+                ally["world"]["objects"] = allies[requested_uid_str]["objects"]
+            if "roads" in allies[requested_uid_str]:
+                ally["world"]["roadData"] = allies[requested_uid_str]["roads"]
             ##Added
-            if "expansions" in allies[str(params[0])]:
-                ally["expansions"] = allies[str(params[0])]["expansions"]
-            if "worldName" in allies[str(params[0])]:
-                ally["worldName"] = allies[str(params[0])]["worldName"]
-            if "titanName" in allies[str(params[0])]:
-                ally["titanName"] = allies[str(params[0])]["titanName"]
+            if "expansions" in allies[requested_uid_str]:
+                ally["expansions"] = allies[requested_uid_str]["expansions"]
+            if "worldName" in allies[requested_uid_str]:
+                ally["worldName"] = allies[requested_uid_str]["worldName"]
+            if "titanName" in allies[requested_uid_str]:
+                ally["titanName"] = allies[requested_uid_str]["titanName"]
         else:
-            [save] = [save for save in get_saves() if str(save['user_object']["userInfo"]["player"]["uid"]) == str(params[0])]
+            saves = [save for save in get_saves() if str(save['user_object']["userInfo"]["player"]["uid"]) == str(params[0])]
+            if not saves:
+                print(f"WARNING: load_world_response: no save found for uid={params[0]}")
+                return {"errorType": 1, "userId": 1, "metadata": meta, "data": {}}
+            save = saves[0]
             ally["world"]["objects"] = save['user_object']["userInfo"]["world"]["objects"]
             ally["world"]["roadData"] = save['user_object']["userInfo"]["world"]["roadData"]
             ally["expansions"] = save['user_object']["userInfo"]["player"]["expansions"]
@@ -2339,14 +2451,7 @@ def load_world_response(params):
             ally["titanName"] = save['user_object']["userInfo"]["titanName"]
             ally["pvpInvaders"] = save['user_object']["pvp"]["invaders"]
 
-        # ally["gf"] = False
-        # ally["yimf"] = ""
-        # ally["novisit"] = False
-        # ally["globalPVP"] = {}
-        # ally["nonFriendInfo"] = {}
-        # ally["untendableObjIDs"] = []
 
-        # ally["world"]["yimf"] = ""
     ally["pvpMode"] = params[2]
     ally["pvpImmunity"] = {"expTS": None}
     ally["visitorEnergy"] = 5
@@ -2368,8 +2473,8 @@ def tend_ally_response(params):
                 save['user_object']["visitorHelpRequests"][str(get_zid())] += "," + str(params[1])
             else:
                 save['user_object']["visitorHelpRequests"][str(get_zid())] = str(params[1])
+            click_next_state(False, params[1], meta, None, None, tending=True, save=save, tend_type=params[2])
             store_session(save)
-            click_next_state(False, params[1], meta, None, None, tending=True, save=copy.deepcopy(save), tend_type=params[2])
 
     tend_ally_response = {"errorType": 0, "userId": 1, "metadata": meta,
                           "data": []}
@@ -2474,9 +2579,13 @@ def purchase_energy_refill_response(param):
     world = session['user_object']["userInfo"]["world"]
     resources = world['resources']
 
-    player['energy'] += int(player['energyMax']-player['energy'])  # TODO put item in inventory (storable?)
+    energy_to_refill = int(player['energyMax'] - player['energy'])
+    if player['cash'] < energy_to_refill:
+        print(f"WARNING: purchase_energy_refill_response failed: player cash {player['cash']} < cost {energy_to_refill}")
+        return {"errorType": 1, "userId": 1, "metadata": {"newPVE": 0}, "data": []}
 
-    player['cash'] -= int(player['energyMax']-player['energy'])
+    player['cash'] -= energy_to_refill
+    player['energy'] += energy_to_refill  # TODO put item in inventory (storable?)
 
     purchase_energy_refill_response = {"errorType": 0, "userId": 1, "metadata": {"newPVE": 0},
                       "data": []}
@@ -2514,6 +2623,10 @@ def purchase_contact_unlock(param):
     unlock_cost = int(game_settings['settings']['gamesettings']['-contractUnlockMultiple']) * get_cash_cost(item, 1)
 
     player = session['user_object']["userInfo"]["player"]
+    if player['cash'] < unlock_cost:
+        print(f"WARNING: purchase_contact_unlock failed: player cash {player['cash']} < cost {unlock_cost}")
+        return {"errorType": 1, "userId": 1, "metadata": {"newPVE": 0}, "data": []}
+
     player['cash'] -= unlock_cost
     item_inventory = session['user_object']["userInfo"]["player"]["inventory"]["items"]
     item_inventory[param["itemCode"]] = item_inventory.get(param["itemCode"], 0) + 1
@@ -2833,12 +2946,17 @@ if __name__ == '__main__':
     set_crash_log(settings.crash_log)
     if settings.compression:
         compress.init_app(app)
-    socketio.init_app(app)
+    allowed_origins = [
+        f"http://{settings.http_host}:{settings.port}",
+        f"http://localhost:{settings.port}",
+        f"http://127.0.0.1:{settings.port}"
+    ]
+    socketio.init_app(app, cors_allowed_origins=allowed_origins, allowEIO3=True)
     db.init_app(app)
     sess.init_app(app)
-    # session.app.session_interface.db.create_all()
-    # app.session_interface.db.create_all()
-    # db.create_all()
+    with app.app_context():
+        db.create_all()
+        prewarm_assets_cache()
 
     socketio.run(app, host=settings.host, port=settings.port, debug=settings.debug, allow_unsafe_werkzeug=True)
     # app.run(host='127.0.0.1', port=5005, debug=True)

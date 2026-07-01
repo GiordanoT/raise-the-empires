@@ -6,7 +6,7 @@ from game_settings import game_settings
 from quest_settings import quest_settings
 
 
-socketio = SocketIO()
+socketio = SocketIO(cors_allowed_origins=["http://127.0.0.1:5005", "http://localhost:5005"], allowEIO3=True)
 
 
 def report_tutorial_step(step, response, new_pve, sequence, endpoint):
@@ -16,7 +16,8 @@ def report_tutorial_step(step, response, new_pve, sequence, endpoint):
 
 
 def describe_step(step):
-    [descr] = [e for e in game_settings['settings']['tutorial']['step'] if e['-id'] == step]
+    matches = [e for e in game_settings['settings']['tutorial']['step'] if e['-id'] == step]
+    descr = matches[0] if matches else {'-id': step, 'description': f'Unknown step: {step}'}
     return descr
 
 
