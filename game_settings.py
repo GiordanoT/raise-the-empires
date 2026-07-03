@@ -2,6 +2,8 @@ import copy
 import json
 import os
 import random
+from functools import lru_cache
+from perf_monitor import timed
 
 from flask import session
 from datetime import datetime
@@ -31,6 +33,10 @@ print("Gamesettings loaded: ",  len(game_settings['settings']), " setting sectio
 _items_list = game_settings['settings']['items']['item']
 _item_by_name = {e['-name']: e for e in _items_list}
 _item_by_code = {e['-code']: e for e in _items_list}
+
+# --- O(1) state machine lookup index (built once at startup) ---
+_state_machine_list = game_settings['settings']['stateMachines']['stateMachine']
+_state_machine_by_name = {e['-name']: e for e in _state_machine_list}
 
 initial_island = json.loads(mod_engine.mod.get(initial_island_path)()) if initial_island_path in mod_engine.mod else read_initial_island()
 print("Initial island template", len(initial_island["objects"]), "objects loaded", len(initial_island["roads"]),
@@ -67,6 +73,7 @@ for key in allies.keys():
     print(" * ", key, ":", wName, " --> ", str(len(ally["objects"]) if ally["objects"] else 0), "objects, ", str(len(ally["roads"]) if ally["roads"] else 0), "roads")
 
 
+@timed("lookup_item_by_name")
 def lookup_item_by_name(item_name):
     item = _item_by_name.get(item_name)
     if item is None:
@@ -161,29 +168,33 @@ def randomReward(item_name):
 #     return sum([yields[e['itemName']] for e in session['user_object']["userInfo"]["world"]["objects"] if
 #                 e['itemName'] in yields.keys()])
 
+_lookup_state_machine_cache = {}
+
+@timed("lookup_state_machine")
 def lookup_state_machine(state_machine_name, custom_values, custom_reference_values=None):
     if custom_reference_values is None:
         custom_reference_values = []
-    state_machine = copy.deepcopy(lookup_raw_state_machine(state_machine_name))
     replacements = {e['-name']: e['-value'] for e in custom_values}
-    reference_replacements = {e['-name']: e['-value'] for e in simple_list(custom_reference_values)}
-    print('replacements', repr(replacements))
-    if reference_replacements:
-        print('reference item replacements', repr(reference_replacements))
+    if custom_reference_values:
+        reference_replacements = {e['-name']: e['-value'] for e in simple_list(custom_reference_values)}
         replacements = {**replacements, **reference_replacements}
-        print('combined reference item replacements', repr(replacements))
 
+    # Cache: same state machine + same replacements always gives the same result
+    cache_key = (state_machine_name, tuple(sorted(replacements.items())))
+    if cache_key in _lookup_state_machine_cache:
+        return _lookup_state_machine_cache[cache_key]
+
+    state_machine = copy.deepcopy(lookup_raw_state_machine(state_machine_name))
     repl_dict(state_machine, replacements)
+    _lookup_state_machine_cache[cache_key] = state_machine
     return state_machine
 
 
 def lookup_raw_state_machine(state_machine_name):
-    try:
-        [state_machine] = [e for e in game_settings['settings']['stateMachines']['stateMachine'] if e['-name'] == state_machine_name]
-        return state_machine
-    except ValueError as e:
-        print("ERROR: Could not look up state machine by name", state_machine_name)
-        raise e
+    sm = _state_machine_by_name.get(state_machine_name)
+    if sm is None:
+        raise ValueError(f"ERROR: Could not look up state machine by name {state_machine_name}")
+    return sm
 
 def lookup_crew_template(building_name):
     item = lookup_item_by_name(building_name)

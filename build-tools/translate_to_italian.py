@@ -8,14 +8,9 @@ import time
 import shutil
 
 # Files paths
-xml_path = r"assets/29oct2012/en_US.xml"
-backup_path = r"assets/29oct2012/en_US.xml.bak"
+xml_source_path = r"assets/29oct2012/en_US.xml"      # English source (input)
+xml_output_path = r"assets/29oct2012/it_IT.xml"      # Italian translation (output)
 cache_path = r"assets/29oct2012/translation_cache.json"
-
-# Create backup if not exists
-if not os.path.exists(backup_path):
-    print(f"Creating backup of en_US.xml at {backup_path}...")
-    shutil.copy(xml_path, backup_path)
 
 # Load translation cache
 cache = {}
@@ -156,9 +151,9 @@ def translate_list(texts):
         
     return results
 
-# Parse the XML file
+# Parse the English source XML
 print("Parsing en_US.xml...")
-tree = ET.parse(xml_path)
+tree = ET.parse(xml_source_path)
 root = tree.getroot()
 
 # List of packages sorted by priority
@@ -216,8 +211,8 @@ for pkg_name in packages_to_process:
     total_strings_processed += len(original_texts)
     print(f"Finished {pkg_name}. Total strings processed so far: {total_strings_processed}")
     
-    # Save XML incrementally
-    tree.write(xml_path, encoding="UTF-8", xml_declaration=True)
-    print(f"Saved progress to {xml_path}")
+    # Save XML incrementally to the Italian output file
+    tree.write(xml_output_path, encoding="UTF-8", xml_declaration=True)
+    print(f"Saved progress to {xml_output_path}")
 
 print("\nTranslation completed successfully!")

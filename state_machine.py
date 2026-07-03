@@ -5,18 +5,18 @@ from flask import session
 from game_settings import game_settings, lookup_item_by_name, lookup_state_machine, lookup_reference_item, \
     lookup_item_by_code, lookup_visitor_reward
 from save_engine import lookup_object, create_backup, lookup_object_save
+from perf_monitor import timed
 
 
 # TODO add new reference item from clicknext step, use old one for first autostep, new one for 2nd autonext,
 #  not needed: is handled by checkstates if new one is null then use old reference item in clicknext(harvesting step?)
 # TODO checkState?
+@timed("click_next_state")
 def click_next_state(do_click, id, meta, step, reference_item, speed_up=False, tending=False, save=None, playback_tend=False, tend_type=None, cancel=True):
     cur_object = lookup_object(id) if not tending else lookup_object_save(save, id)
-    print("cur_object used:", repr(cur_object))
     tend = tending or playback_tend
 
     game_item = lookup_item_by_name(cur_object['itemName'])
-    print("item used:", repr(game_item))
 
     timestamp = datetime.now().timestamp()
     if 'stateMachineValues' in game_item:
@@ -24,9 +24,7 @@ def click_next_state(do_click, id, meta, step, reference_item, speed_up=False, t
                                              game_item['stateMachineValues'].get('define', []),
                                              (lookup_reference_item(cur_object) or {}).get('referenceValues',{}).get('define'))
 
-        print("state_machine used:", repr(state_machine))
         state = lookup_state(state_machine, cur_object.get('state', 0), cur_object, True)
-        print("cur state:", repr(state))
 
         while '-autoNext' in state and state['-stateName'] != state['-autoNext']:   # '-clientDuration': '2.0s', '-duration': '0' respect duration for harvest?
             duration =  parse_duration(state.get('-duration', '0'))
@@ -45,7 +43,6 @@ def click_next_state(do_click, id, meta, step, reference_item, speed_up=False, t
                     cur_object['lastUpdated'] = 0  #init?
                 cur_object['lastUpdated'] += duration * 1000
                 cur_object['state'] = next_state_id
-                print("pre auto_next_state:", repr(state), 'time', cur_object['lastUpdated'], "duration", duration)
                 if not tending:
                     handle_world_state_change(meta, state, state_machine, game_item, step, previous_state, cur_object.get('referenceItem'), cur_object.get('referenceItem'))
             else:
@@ -64,7 +61,6 @@ def click_next_state(do_click, id, meta, step, reference_item, speed_up=False, t
                                                      .get('referenceValues', {}).get('define'))
             next_click_state = lookup_state(state_machine, next_state_id, cur_object, True)
             check_state(state_machine, next_click_state, cur_object, tending)
-            print("next_click_state:", repr(next_click_state))
             if cancel:
                 print("canceled state")
             if not tending:
@@ -89,7 +85,6 @@ def click_next_state(do_click, id, meta, step, reference_item, speed_up=False, t
                 previous_state = next_click_state
                 next_click_state = lookup_state(state_machine, next_state_id, cur_object, True)
                 check_state(state_machine, next_click_state, cur_object, tending)
-                print("auto_next_state:", repr(next_click_state))
                 if not tending:
                     do_state_rewards(next_click_state, reference_item, meta, playback_tend=playback_tend)
                     handle_world_state_change(meta, next_click_state, state_machine, game_item, step, previous_state, reference_item, reference_item)

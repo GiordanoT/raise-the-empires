@@ -61,6 +61,7 @@ from logger import socketio, report_tutorial_step, report_world_log, report_othe
 import copy
 import random
 import configparser
+from perf_monitor import PerfMonitor, timed, record_amf
 
 
 try:
@@ -89,6 +90,7 @@ sess = Session()
 
 app_base_path = base_path()
 app: Flask = Flask(__name__, root_path=app_base_path)
+perf_monitor = PerfMonitor(app, slow_threshold_ms=200)
 
 print("Root folder", app.root_path)
 print("Instance folder", app.instance_path)
@@ -126,7 +128,19 @@ def add_cache_headers(response):
 
 @app.route("/")
 def index():
-    return render_template("index.html", version=version, release_date=release_date)
+    lang = request.cookies.get('lang', 'en')
+    return render_template("index.html", version=version, release_date=release_date,
+                           language=lang)
+
+
+@app.route("/set_language/<lang>")
+def set_language(lang):
+    if lang not in ('en', 'it'):
+        lang = 'en'
+    # Use a plain cookie — more reliable than Flask session across redirects
+    resp = make_response(redirect(request.referrer or '/'))
+    resp.set_cookie('lang', lang, max_age=60*60*24*365, samesite='Lax')
+    return resp
 
 
 @app.route("/home.html")
@@ -138,6 +152,7 @@ def home():
     saves = get_saves()
     return render_template("home.html", time=datetime.now().timestamp(), zid=str(get_zid()),
                            version=version,
+                           language=request.cookies.get('lang', 'en'),
                            allies=json.dumps(get_allies_friend(saves),
                                              default=lambda o: '<not serializable>', sort_keys=False, indent=2),
                            app_friends=json.dumps(get_allies_id(saves)),
@@ -529,7 +544,18 @@ def game_settings_file():
 
 @app.route("/127.0.0.1en_US.xml")
 def en_us_file():
-    return send_from_directory_mod("assets/29oct2012", "en_US.xml")
+    lang = request.cookies.get('lang', 'en')
+    filename = "it_IT.xml" if lang == 'it' else "en_US.xml"
+    # Read directly from disk and add no-cache headers so the browser
+    # never serves a stale cached version after a language switch.
+    file_path = os.path.join(app.root_path, "assets/29oct2012", filename)
+    with open(file_path, 'rb') as f:
+        content = f.read()
+    response = Response(content, mimetype='text/xml')
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 
 @app.route("/127.0.0.1questSettings.xml")
@@ -765,34 +791,69 @@ def send_sol_assets_alternate(path):
 _assets_ram_cache = {}
 
 def prewarm_assets_cache():
-    print("Pre-warming assets memory cache...")
-    common_assets = [
-        ("assets", "ZGame.109338_tracer2.swf"),
-        ("assets/29oct2012", "gameSettings_with_fixes.xml"),
-        ("assets/29oct2012", "questSettings_with_fixes.xml"),
-        ("assets/29oct2012", "en_US.xml"),
-        ("assets/sol_assets_octdict/assets/game/buildables", "Buildables_Icons_0.swf"),
-        ("assets/sol_assets_octdict/assets/displays/screens", "CityScreen.swf"),
-    ]
-    for directory, filename in common_assets:
-        absolute_directory = os.path.normpath(os.path.join(app.root_path, directory))
-        full_path = os.path.normpath(os.path.join(absolute_directory, filename))
-        if os.path.exists(full_path) and os.path.isfile(full_path):
+    """Load all game assets into RAM so the first click on any modal is instant."""
+    import mimetypes
+    import threading
+
+    def _load_all():
+        # Directories to fully pre-load into RAM
+        scan_dirs = [
+            os.path.join(app.root_path, "assets", "sol_assets_octdict"),
+        ]
+        # Individual critical files that must be ready immediately
+        priority_files = [
+            os.path.join(app.root_path, "assets", "ZGame.109338_tracer2.swf"),
+            os.path.join(app.root_path, "assets", "29oct2012", "gameSettings_with_fixes.xml"),
+            os.path.join(app.root_path, "assets", "29oct2012", "questSettings_with_fixes.xml"),
+            os.path.join(app.root_path, "assets", "29oct2012", "en_US.xml"),
+            os.path.join(app.root_path, "assets", "29oct2012", "it_IT.xml"),
+        ]
+
+        def cache_file(full_path):
+            if full_path in _assets_ram_cache:
+                return
             try:
+                size = os.path.getsize(full_path)
+                if size == 0 or size > 15 * 1024 * 1024:  # skip empty or >15 MB
+                    return
                 with open(full_path, 'rb') as f:
                     content_bytes = f.read()
-                import mimetypes
                 mime_type, _ = mimetypes.guess_type(full_path)
                 if not mime_type:
-                    if filename.endswith('.swf'):
+                    if full_path.endswith('.swf'):
                         mime_type = 'application/x-shockwave-flash'
+                    elif full_path.endswith('.xml'):
+                        mime_type = 'text/xml'
                     else:
                         mime_type = 'application/octet-stream'
                 _assets_ram_cache[full_path] = (content_bytes, mime_type)
-                print(f" -> Cached {filename} ({len(content_bytes)} bytes)")
             except Exception as e:
-                print(f" -> Error pre-warming {filename}: {e}")
-    print("Assets memory cache pre-warmed.")
+                print(f"  [prewarm] Error caching {full_path}: {e}")
+
+        # Load priority files first
+        print("[prewarm] Loading priority files...")
+        for fp in priority_files:
+            if os.path.isfile(fp):
+                cache_file(fp)
+
+        # Then scan all assets directories
+        total = 0
+        for scan_dir in scan_dirs:
+            if not os.path.isdir(scan_dir):
+                continue
+            for dirpath, _, filenames in os.walk(scan_dir):
+                for fname in filenames:
+                    full_path = os.path.normpath(os.path.join(dirpath, fname))
+                    cache_file(full_path)
+                    total += 1
+
+        total_mb = sum(len(v[0]) for v in _assets_ram_cache.values()) / (1024 * 1024)
+        print(f"[prewarm] Done — {len(_assets_ram_cache)} files cached ({total_mb:.1f} MB in RAM).")
+
+    # Run in background so server starts immediately
+    print("[prewarm] Starting background asset pre-load...")
+    threading.Thread(target=_load_all, daemon=True).start()
+
 
 
 def send_from_directory_mod(directory, filename, **options):
@@ -860,12 +921,13 @@ def post_gateway():
     # print("Data:")
     # print(request.data)
     resp_msg = remoting.decode(request.data)
-    # print(resp_msg.headers)
-    print(resp_msg.bodies)
-    # print(resp_msg.bodies[0])
+    func_name = resp_msg.bodies[0][1].body[1][0].functionName if resp_msg.bodies else '?'
+    print(f"Gateway: {func_name}")
 
     resps = []
     for reqq in resp_msg.bodies[0][1].body[1]:
+        import time as _time
+        _t_start = _time.perf_counter()
         if reqq.functionName == 'UserService.initUser':
             try:
                 resps.append(user_response())
@@ -1274,6 +1336,8 @@ def post_gateway():
 
         if reqq.functionName != 'UserService.tutorialProgress' and reqq.functionName != 'WorldService.performAction':
             report_other_log(reqq.functionName, resps[-1] if resps else None, reqq, resp_msg.bodies[0][0])
+        _elapsed = (_time.perf_counter() - _t_start) * 1000
+        record_amf(reqq.functionName, _elapsed)
 
     emsg = {
         "serverTime": datetime.now().timestamp(),
@@ -1287,7 +1351,7 @@ def post_gateway():
     #  print(ev.headers)
     # print(ev.bodies)
 
-    ret_body = remoting.encode(ev, strict=True, logger=True).getvalue()  # .read()
+    ret_body = remoting.encode(ev, strict=True, logger=False).getvalue()
     # print(ret_body)
     return Response(ret_body, mimetype='application/x-amf')
 
@@ -1587,6 +1651,7 @@ def init_user():
 
 
 # Q0516 ? start
+@timed("user_response")
 def user_response():
     new_quests = []
     if 'user_object' in session:
@@ -1884,6 +1949,7 @@ def tutorial_response(step, sequence, endpoint):
 
 
 #def perform_world_response(step, supplied_id, position, item_name, reference_item, from_inventory, elapsed, cancel, req2):
+@timed("perform_world_response")
 def perform_world_response(params):
 
     step=params[0]
@@ -2841,7 +2907,7 @@ def dummy_response():
 
 @app.route("/language_editor")
 def language_editor():
-    tree = ET.parse("assets/29oct2012/en_US.xml")
+    tree = ET.parse("assets/29oct2012/it_IT.xml")
     root = tree.getroot()
     for pkg in root:
         print(pkg.tag, pkg.attrib)
@@ -2951,14 +3017,14 @@ if __name__ == '__main__':
         f"http://localhost:{settings.port}",
         f"http://127.0.0.1:{settings.port}"
     ]
-    socketio.init_app(app, cors_allowed_origins=allowed_origins, allowEIO3=True)
+    socketio.init_app(app, cors_allowed_origins=allowed_origins, allowEIO3=True, async_mode='threading')
     db.init_app(app)
     sess.init_app(app)
     with app.app_context():
         db.create_all()
         prewarm_assets_cache()
 
-    socketio.run(app, host=settings.host, port=settings.port, debug=settings.debug, allow_unsafe_werkzeug=True)
+    socketio.run(app, host=settings.host, port=settings.port, debug=settings.debug, allow_unsafe_werkzeug=True, use_reloader=False)
     # app.run(host='127.0.0.1', port=5005, debug=True)
     # logging.getLogger('socketio').setLevel(logging.ERROR)
     # logging.getLogger('engineio').setLevel(logging.ERROR)
