@@ -796,6 +796,21 @@ def prewarm_assets_cache():
     import threading
 
     def _load_all():
+        # Minify translation XMLs to speed up client-side Flash parsing
+        for fp in [
+            os.path.join(app.root_path, "assets", "29oct2012", "en_US.xml"),
+            os.path.join(app.root_path, "assets", "29oct2012", "it_IT.xml")
+        ]:
+            if os.path.exists(fp):
+                try:
+                    orig_size = os.path.getsize(fp)
+                    tree = ET.parse(fp)
+                    tree.write(fp, encoding="UTF-8", xml_declaration=True)
+                    new_size = os.path.getsize(fp)
+                    print(f"[prewarm] Auto-minified {os.path.basename(fp)}: {orig_size/1024/1024:.2f}MB -> {new_size/1024/1024:.2f}MB")
+                except Exception as e:
+                    print(f"[prewarm] Failed to minify {fp}: {e}")
+
         # Directories to fully pre-load into RAM
         scan_dirs = [
             os.path.join(app.root_path, "assets", "sol_assets_octdict"),
