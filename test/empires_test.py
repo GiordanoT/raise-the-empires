@@ -4,7 +4,7 @@ import pytest
 from flask import Flask, session, request
 from pyamf import remoting
 
-empires_server = __import__('empires-server')
+empires_server = __import__('empires_server')
 import quest_engine
 from pathlib import Path
 

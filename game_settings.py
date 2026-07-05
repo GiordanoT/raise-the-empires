@@ -63,14 +63,14 @@ def _load_ally_files():
 
 allies = _load_ally_files()
 print("Ally islands")
-print("-", len(allies.keys()), "allies loaded")
-for key in allies.keys():
-    ally = allies[key]
+active_allies = {k: v for k, v in allies.items() if v.get("objects")}
+print("-", len(active_allies), "allies loaded")
+for key, ally in active_allies.items():
     try:
         wName = ally["worldName"]
     except KeyError as e:
         wName = "<no world Name>"
-    print(" * ", key, ":", wName, " --> ", str(len(ally["objects"]) if ally["objects"] else 0), "objects, ", str(len(ally["roads"]) if ally["roads"] else 0), "roads")
+    print(" * ", key, ":", wName, " --> ", str(len(ally["objects"])), "objects, ", str(len(ally["roads"]) if ally["roads"] else 0), "roads")
 
 
 @timed("lookup_item_by_name")

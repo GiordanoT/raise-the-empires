@@ -58,11 +58,7 @@ def battle_complete_response(params):
         attacker_unit = friendlies[player_unit_id] if player_turn else baddies[enemy_unit_id]
         defender_unit = baddies[enemy_unit_id] if player_turn else friendlies[player_unit_id]
         
-        attacker_tier = int(attacker_unit.get("unit", {}).get("-tier", "1"))
-        defender_tier = int(defender_unit.get("unit", {}).get("-tier", "1"))
-        
-        base_damage = 25 + 5 * (attacker_tier - 1) + 3 * (attacker_tier - defender_tier)
-        base_damage = max(base_damage, 5)
+        base_damage = 25
 
         if player_turn:
             damage = base_damage * (3 * friendly_max_strength + baddie_strength) / (3 * baddie_strength + friendly_max_strength)

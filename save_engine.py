@@ -144,7 +144,7 @@ def exception_handler(exc_type, exc_value, exc_traceback):
 
 
 config = configparser.ConfigParser()
-config.read(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'RaiseTheEmpires.ini'))
+config.read(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'raise_the_empires.ini'))
 
 daiquiri.setup(level=logging.INFO, outputs=(
     daiquiri.output.Stream(sys.stdout),

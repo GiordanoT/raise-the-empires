@@ -10,7 +10,7 @@ Features:
   - Exposes /perf_reset   to clear stats
   - @timed decorator to profile any function
 
-Usage in empires-server.py:
+Usage in empires_server.py:
     from perf_monitor import PerfMonitor, timed
     perf = PerfMonitor(app, slow_threshold_ms=200)
 

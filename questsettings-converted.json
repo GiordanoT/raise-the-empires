@@ -1266,7 +1266,7 @@
 							"_type": "oil",
 							"_total": "250",
 							"_desc": "quest_W150_task_03",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						}
 					]
@@ -18979,7 +18979,7 @@
 							"_counterType": "resource",
 							"_button": "QuestTrees:QALL1_01_button",
 							"_buttonTooltip": "QuestTrees:QALL1_01_GreyedOutTooltip",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -29119,7 +29119,7 @@
 							"_type": "coins",
 							"_total": "2000",
 							"_desc": "quest_D526_01_task_03",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						}
 					]
@@ -39562,7 +39562,7 @@
 							"_total": "30000",
 							"_desc": "Megaseries:QMS01_1_02_task_02",
 							"_sticky": "true",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png"
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png"
 						},
 						{
 							"cost": {
@@ -40627,7 +40627,7 @@
 							"_type": "coins",
 							"_total": "20000",
 							"_desc": "Megaseries:QTMS02_01_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -54028,7 +54028,7 @@
 							"_type": "coins",
 							"_total": "15000",
 							"_desc": "QuestTrees:QT019_04_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -54997,7 +54997,7 @@
 							"_type": "oil",
 							"_total": "60000",
 							"_desc": "QuestTrees:QT02_03b_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -58452,7 +58452,7 @@
 							"_type": "oil",
 							"_total": "50000",
 							"_desc": "QuestTrees:QT023_08_task_01",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -58703,7 +58703,7 @@
 							"_type": "oil",
 							"_total": "20000",
 							"_desc": "QuestTrees:QT024_02a_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -60635,7 +60635,7 @@
 							"_type": "oil",
 							"_total": "6000",
 							"_desc": "QuestTrees:QT026_01_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -63418,7 +63418,7 @@
 							"_type": "oil",
 							"_total": "30000",
 							"_desc": "QuestTrees:QT028_03a2_task_03",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						}
 					]
@@ -63555,7 +63555,7 @@
 							"_type": "coins",
 							"_total": "200000",
 							"_desc": "QuestTrees:QT028_04a_task_03",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						}
 					]
@@ -63971,7 +63971,7 @@
 							"_type": "oil",
 							"_total": "30000",
 							"_desc": "QuestTrees:QT028_03b_task_03",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						}
 					]
@@ -64243,7 +64243,7 @@
 							"_type": "coins",
 							"_total": "200000",
 							"_desc": "QuestTrees:QT028_04b2_task_03",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						}
 					]
@@ -65628,7 +65628,7 @@
 							"_type": "oil",
 							"_total": "6000",
 							"_desc": "QuestTrees:QT030_01_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -67134,7 +67134,7 @@
 							"_type": "coins",
 							"_total": "100000",
 							"_desc": "QuestTrees:QT031_01_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -69884,7 +69884,7 @@
 							"_type": "coins",
 							"_total": "50000",
 							"_desc": "QuestTrees:QT033_02_task_03",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						}
 					]
@@ -72730,7 +72730,7 @@
 							"_type": "oil",
 							"_total": "7500",
 							"_desc": "QuestTrees:QT035_04_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -73594,7 +73594,7 @@
 							"_type": "coins",
 							"_total": "20000",
 							"_desc": "QuestTrees:QT036_02a_task_03",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						}
 					]
@@ -75079,7 +75079,7 @@
 							"_type": "oil",
 							"_total": "1000",
 							"_desc": "QuestTrees:QT037_02_task_03",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						}
 					]
@@ -78883,7 +78883,7 @@
 							"_type": "coins",
 							"_total": "10000",
 							"_desc": "QuestTrees:QT040_03a1_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -119934,7 +119934,7 @@
 				"_complete": "quest_1071_complete",
 				"_tooltip": "quest_1071_tooltip",
 				"_advisorId": "a04",
-				"_buttonIcon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png"
+				"_buttonIcon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png"
 			},
 			{
 				"sequels": {
@@ -122868,7 +122868,7 @@
 							"_total": "5",
 							"_desc": "quest_0405_task_02",
 							"_sticky": "true",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png"
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png"
 						}
 					]
 				},
@@ -122940,7 +122940,7 @@
 							"_type": "oil",
 							"_total": "200",
 							"_desc": "quest_3010_task_01",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -122951,7 +122951,7 @@
 							"_type": "coins",
 							"_total": "2500",
 							"_desc": "quest_3010_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -124314,7 +124314,7 @@
 							"_type": "oil",
 							"_total": "250",
 							"_desc": "quest_3040_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -130808,7 +130808,7 @@
 							"_type": "oil",
 							"_total": "100",
 							"_desc": "quest_0764_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -131276,7 +131276,7 @@
 							"_total": "30000",
 							"_desc": "quest_FD0101_task_02",
 							"_sticky": "true",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png"
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png"
 						},
 						{
 							"cost": {
@@ -132352,7 +132352,7 @@
 							"_item": "coins",
 							"_total": "5000",
 							"_desc": "quest_FD0208_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -135094,7 +135094,7 @@
 							"_item": "coins",
 							"_total": "10000",
 							"_desc": "QuestTrees:QT01_04aa_task_01",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -135654,7 +135654,7 @@
 							"_type": "coins",
 							"_total": "1000",
 							"_desc": "QuestTrees:QT02_01_task_01",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -136231,7 +136231,7 @@
 							"_item": "coins",
 							"_total": "5000",
 							"_desc": "QuestTrees:QT02_03b_task_03",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						}
 					]
@@ -136371,7 +136371,7 @@
 							"_item": "coins",
 							"_total": "10000",
 							"_desc": "QuestTrees:QT02_04b2_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Coins_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/coins_96.png",
 							"_sticky": "true"
 						},
 						{
@@ -141188,7 +141188,7 @@
 							"_total": "3",
 							"_sticky": "true",
 							"_desc": "quest_DEC0035_task_02",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png"
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png"
 						},
 						{
 							"cost": {
@@ -148967,7 +148967,7 @@
 							"_type": "oil",
 							"_total": "1000",
 							"_desc": "QWG_task_7",
-							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/Oil_96.png",
+							"_icon": "assets/game/contracts/Contracts_Icons_0.swf/oil_96.png",
 							"_sticky": "true"
 						},
 						{
