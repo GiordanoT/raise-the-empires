@@ -121,10 +121,40 @@ MAX_ADMIN_ID = 123
 @app.after_request
 def add_cache_headers(response):
     path = request.path.lower()
+    if "settings" in path or "en_us" in path or "it_it" in path:
+        return response
     if path.startswith('/files/') or path.startswith('/templates/') or path.endswith(('.swf', '.png', '.jpg', '.jpeg', '.gif', '.xml', '.js', '.css')):
         response.headers['Cache-Control'] = 'public, max-age=31536000'
     return response
 
+@app.before_request
+def serve_config_files():
+    path = request.path.lower()
+    if path.endswith("gamesettings.xml"):
+        response = send_from_directory_mod("assets/game_configs", "game_settings.xml")
+        if isinstance(response, Response):
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+        return response
+    elif path.endswith("questsettings.xml"):
+        response = send_from_directory_mod("assets/game_configs", "quest_settings.xml")
+        if isinstance(response, Response):
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+        return response
+    elif path.endswith("en_us.xml"):
+        lang = request.cookies.get('lang', 'en')
+        filename = "it_it.xml" if lang == 'it' else "en_us.xml"
+        file_path = os.path.join(app.root_path, "assets/game_configs", filename)
+        with open(file_path, 'rb') as f:
+            content = f.read()
+        response = Response(content, mimetype='text/xml')
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
 
 @app.route("/")
 def index():
@@ -142,6 +172,29 @@ def set_language(lang):
     resp.set_cookie('lang', lang, max_age=60*60*24*365, samesite='Lax')
     return resp
 
+@app.route('/set_limited_edition', methods=['POST'])
+def set_limited_edition():
+    enabled = request.form.get('enabled') == 'true'
+    import mod_engine
+    mods_conf_path = os.path.join(app.root_path, "mods", "mods.conf")
+    os.makedirs(os.path.dirname(mods_conf_path), exist_ok=True)
+    import configparser
+    config = configparser.ConfigParser()
+    if os.path.exists(mods_conf_path):
+        with open(mods_conf_path, 'r', encoding='utf-8') as f:
+            config.read_string(f.read())
+    if not config.has_section('mods'):
+        config.add_section('mods')
+    config.set('mods', 'active_limited_edition', 'true' if enabled else 'false')
+    with open(mods_conf_path, 'w', encoding='utf-8') as f:
+        config.write(f)
+    mod_engine.config = config
+    global _assets_ram_cache
+    keys_to_delete = [k for k in _assets_ram_cache.keys() if "game_settings.xml" in k or "gameSettings.xml" in k]
+    for k in keys_to_delete:
+        del _assets_ram_cache[k]
+    prewarm_assets_cache()
+    return json.dumps({"success": True}), 200, {"Content-Type": "application/json"}
 
 @app.route("/home.html")
 def home():
@@ -150,6 +203,7 @@ def home():
         print("Invalid save game")
         return make_response(redirect('/save-editor')) #todo disable save editor toggle?
     saves = get_saves()
+    is_le_enabled = mod_engine.config.has_section('mods') and mod_engine.config.get('mods', 'active_limited_edition', fallback='false') == 'true'
     return render_template("home.html", time=datetime.now().timestamp(), zid=str(get_zid()),
                            version=version,
                            language=request.cookies.get('lang', 'en'),
@@ -159,7 +213,8 @@ def home():
                            worldname=session['user_object']["userInfo"]["worldName"] if 'user_object' in session else "Emperor",
                            picture=get_avatar_pic(),
                            dropdown_items=get_sessions_dropdown_info(saves),
-                           motd=get_motd()
+                           motd=get_motd(),
+                           active_limited_edition=is_le_enabled
                            )
 
 @app.route("/ruffle.html")
@@ -537,9 +592,16 @@ def flashFile():
     return send_from_directory_mod("assets", "z_game_tracer2.swf")  # regular one
 
 
+@app.route("/127.0.0.1gameSettings.xml")
+@app.route("/127.0.0.1gamesettings.xml")
 @app.route("/gameSettings.xml")
 def game_settings_file():
-    return send_from_directory_mod("assets/game_configs", "game_settings.xml")
+    response = send_from_directory_mod("assets/game_configs", "game_settings.xml")
+    if isinstance(response, Response):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
 
 
 @app.route("/127.0.0.1en_US.xml")
@@ -560,6 +622,8 @@ def en_us_file():
 
 
 @app.route("/127.0.0.1questSettings.xml")
+@app.route("/127.0.0.1questsettings.xml")
+@app.route("/questSettings.xml")
 def quest_settings_file():
     return send_from_directory_mod("assets/game_configs", "quest_settings.xml")
 
@@ -653,10 +717,115 @@ def send_sol_assets_alternate(path):
 
 _assets_ram_cache = {}
 
+_le_translation_keys = set()
+
+def load_le_translation_keys():
+    global _le_translation_keys
+    if _le_translation_keys:
+        return
+    import os
+    import xml.etree.ElementTree as ET
+    keywords = ["limited edition", "limited time", "edizione limitata", "tempo limitato"]
+    for lang_file in ["en_us.xml", "it_it.xml"]:
+        path = os.path.join(app.root_path, "assets", "game_configs", lang_file)
+        if os.path.exists(path):
+            try:
+                tree = ET.parse(path)
+                root = tree.getroot()
+                for string_elem in root.findall(".//string"):
+                    text = "".join(string_elem.itertext()).lower()
+                    key = string_elem.attrib.get("key", "")
+                    if any(kw in text for kw in keywords):
+                        base_key = key
+                        for suffix in ["_menuName", "_sentenceName", "_description", "_tooltip"]:
+                            if base_key.endswith(suffix):
+                                base_key = base_key[:-len(suffix)]
+                        _le_translation_keys.add(base_key.lower())
+            except Exception as e:
+                print(f"[load_le_translation_keys] Error parsing {lang_file}: {e}")
+
 def prewarm_assets_cache():
     """Load all game assets into RAM so the first click on any modal is instant."""
     import mimetypes
     import threading
+
+    priority_files = [
+        os.path.join(app.root_path, "assets", "z_game_tracer2.swf"),
+        os.path.join(app.root_path, "assets", "game_configs", "game_settings.xml"),
+        os.path.join(app.root_path, "assets", "game_configs", "quest_settings.xml"),
+        os.path.join(app.root_path, "assets", "game_configs", "en_us.xml"),
+        os.path.join(app.root_path, "assets", "game_configs", "it_it.xml"),
+    ]
+
+    def cache_file(full_path):
+        if full_path in _assets_ram_cache:
+            return
+        try:
+            size = os.path.getsize(full_path)
+            if size == 0 or size > 15 * 1024 * 1024:  # skip empty or >15 MB
+                return
+            with open(full_path, 'rb') as f:
+                content_bytes = f.read()
+            mime_type, _ = mimetypes.guess_type(full_path)
+            if not mime_type:
+                if full_path.endswith('.swf'):
+                    mime_type = 'application/x-shockwave-flash'
+                elif full_path.endswith('.xml'):
+                    mime_type = 'text/xml'
+                else:
+                    mime_type = 'application/octet-stream'
+            if os.path.basename(full_path) == "game_settings.xml":
+                import mod_engine
+                is_le_enabled = mod_engine.config.has_section('mods') and mod_engine.config.get('mods', 'active_limited_edition', fallback='false') == 'true'
+                if not is_le_enabled:
+                    print("[prewarm] active_limited_edition is disabled. Dynamically hiding LE items in game_settings.xml...")
+                    try:
+                        root = ET.fromstring(content_bytes)
+                        for item in root.findall(".//item"):
+                            name = item.attrib.get("name", "")
+                            parts_exp = item.find("partsExperiment")
+                            parts_exp_text = parts_exp.text if parts_exp is not None else ""
+                            load_le_translation_keys()
+                            code = item.attrib.get("code", "")
+                            is_le = False
+                            s_prefixes = ("SF", "SG", "SH", "SJ", "SK", "SL", "SU", "DE", "UJ", "UV", "UG")
+                            if "LE_" in name or "le_" in name.lower() or "bundle_" in name.lower() or "limited" in name.lower():
+                                is_le = True
+                            elif parts_exp_text == "empire_research_le_parts":
+                                is_le = True
+                            elif item.attrib.get("newItem") == "true":
+                                is_le = True
+                            elif code.startswith(s_prefixes):
+                                is_le = True
+                            elif name.lower() in _le_translation_keys or code.lower() in _le_translation_keys:
+                                is_le = True
+                            elif code.startswith("N"):
+                                num_str = "".join(c for c in code if c.isdigit())
+                                if num_str:
+                                    try:
+                                        num = int(num_str)
+                                        if num >= 29:
+                                            is_le = True
+                                    except ValueError:
+                                        pass
+                                
+                            if is_le:
+                                item.set("hideFromStore", "true")
+                                item.set("displayInStore", "false")
+                                item.set("buyable", "false")
+                        content_bytes = ET.tostring(root, encoding="UTF-8", xml_declaration=True)
+                        print("[prewarm] Dynamic LE hiding complete.")
+                    except Exception as xml_err:
+                        print(f"[prewarm] Error hiding LE items: {xml_err}")
+            _assets_ram_cache[full_path] = (content_bytes, mime_type)
+        except Exception as e:
+            print(f"  [prewarm] Error caching {full_path}: {e}")
+
+    # Load priority files synchronously first so they are immediately available
+    print("[prewarm] Loading priority files synchronously...")
+    for fp in priority_files:
+        if os.path.isfile(fp):
+            cache_file(fp)
 
     def _load_all():
         # Minify translation XMLs to speed up client-side Flash parsing
@@ -678,43 +847,8 @@ def prewarm_assets_cache():
         scan_dirs = [
             os.path.join(app.root_path, "assets", "sol_assets"),
         ]
-        # Individual critical files that must be ready immediately
-        priority_files = [
-            os.path.join(app.root_path, "assets", "z_game_tracer2.swf"),
-            os.path.join(app.root_path, "assets", "game_configs", "game_settings.xml"),
-            os.path.join(app.root_path, "assets", "game_configs", "quest_settings.xml"),
-            os.path.join(app.root_path, "assets", "game_configs", "en_us.xml"),
-            os.path.join(app.root_path, "assets", "game_configs", "it_it.xml"),
-        ]
 
-        def cache_file(full_path):
-            if full_path in _assets_ram_cache:
-                return
-            try:
-                size = os.path.getsize(full_path)
-                if size == 0 or size > 15 * 1024 * 1024:  # skip empty or >15 MB
-                    return
-                with open(full_path, 'rb') as f:
-                    content_bytes = f.read()
-                mime_type, _ = mimetypes.guess_type(full_path)
-                if not mime_type:
-                    if full_path.endswith('.swf'):
-                        mime_type = 'application/x-shockwave-flash'
-                    elif full_path.endswith('.xml'):
-                        mime_type = 'text/xml'
-                    else:
-                        mime_type = 'application/octet-stream'
-                _assets_ram_cache[full_path] = (content_bytes, mime_type)
-            except Exception as e:
-                print(f"  [prewarm] Error caching {full_path}: {e}")
-
-        # Load priority files first
-        print("[prewarm] Loading priority files...")
-        for fp in priority_files:
-            if os.path.isfile(fp):
-                cache_file(fp)
-
-        # Then scan all assets directories
+        # Scan all assets directories
         total = 0
         for scan_dir in scan_dirs:
             if not os.path.isdir(scan_dir):
@@ -728,8 +862,8 @@ def prewarm_assets_cache():
         total_mb = sum(len(v[0]) for v in _assets_ram_cache.values()) / (1024 * 1024)
         print(f"[prewarm] Done — {len(_assets_ram_cache)} files cached ({total_mb:.1f} MB in RAM).")
 
-    # Run in background so server starts immediately
-    print("[prewarm] Starting background asset pre-load...")
+    # Run remaining in background
+    print("[prewarm] Starting background asset pre-load for remaining files...")
     threading.Thread(target=_load_all, daemon=True).start()
 
 
@@ -737,8 +871,22 @@ def prewarm_assets_cache():
 def send_from_directory_mod(directory, filename, **options):
     absolute_directory = os.path.normpath(os.path.join(app.root_path, directory))
     path = os.path.join(directory, filename)
-    if path in mod_engine.mod:
-        return mod_engine.mod.get(path)()
+    
+    # Normalize key to unix-style slashes to match mod engine keys
+    unix_path = os.path.normpath(path).replace("\\", "/")
+    
+    if unix_path in mod_engine.mod:
+        return mod_engine.mod.get(unix_path)()
+        
+    # Alias / Redirect mapping for gameSettings.xml
+    if "29oct2012/gameSettings.xml" in unix_path or unix_path.endswith("game_settings.xml"):
+        if "assets/29oct2012/gameSettings.xml" in mod_engine.mod:
+            return mod_engine.mod.get("assets/29oct2012/gameSettings.xml")()
+            
+    # Alias / Redirect mapping for questSettings.xml
+    if "29oct2012/questSettings.xml" in unix_path or unix_path.endswith("quest_settings.xml"):
+        if "assets/29oct2012/questSettings.xml" in mod_engine.mod:
+            return mod_engine.mod.get("assets/29oct2012/questSettings.xml")()
         
     full_path = os.path.normpath(os.path.join(absolute_directory, filename))
     
@@ -782,8 +930,51 @@ def send_from_directory_mod(directory, filename, **options):
                 else:
                     mime_type = 'application/octet-stream'
             
+            if filename == "game_settings.xml":
+                is_le_enabled = mod_engine.config.has_section('mods') and mod_engine.config.get('mods', 'active_limited_edition', fallback='false') == 'true'
+                if not is_le_enabled:
+                    print("[send_from_directory_mod] active_limited_edition is disabled. Dynamically filtering game_settings.xml on read-through...")
+                    try:
+                        root = ET.fromstring(content_bytes)
+                        for item in root.findall(".//item"):
+                            name = item.attrib.get("name", "")
+                            parts_exp = item.find("partsExperiment")
+                            parts_exp_text = parts_exp.text if parts_exp is not None else ""
+                            load_le_translation_keys()
+                            code = item.attrib.get("code", "")
+                            is_le = False
+                            s_prefixes = ("SF", "SG", "SH", "SJ", "SK", "SL", "SU", "DE", "UJ", "UV", "UG")
+                            if "LE_" in name or "le_" in name.lower() or "bundle_" in name.lower() or "limited" in name.lower():
+                                is_le = True
+                            elif parts_exp_text == "empire_research_le_parts":
+                                is_le = True
+                            elif item.attrib.get("newItem") == "true":
+                                is_le = True
+                            elif code.startswith(s_prefixes):
+                                is_le = True
+                            elif name.lower() in _le_translation_keys or code.lower() in _le_translation_keys:
+                                is_le = True
+                            elif code.startswith("N"):
+                                num_str = "".join(c for c in code if c.isdigit())
+                                if num_str:
+                                    try:
+                                        num = int(num_str)
+                                        if num >= 29:
+                                            is_le = True
+                                    except ValueError:
+                                        pass
+                                
+                            if is_le:
+                                item.set("hideFromStore", "true")
+                                item.set("displayInStore", "false")
+                                item.set("buyable", "false")
+                        content_bytes = ET.tostring(root, encoding="UTF-8", xml_declaration=True)
+                        print("[send_from_directory_mod] Read-through filtering complete.")
+                    except Exception as xml_err:
+                        print(f"Error hiding LE items on read-through cache: {xml_err}")
+
             # Only cache files smaller than 10MB to prevent memory explosion
-            if os.path.getsize(full_path) < 10 * 1024 * 1024:
+            if len(content_bytes) < 10 * 1024 * 1024:
                 _assets_ram_cache[full_path] = (content_bytes, mime_type)
             return Response(content_bytes, mimetype=mime_type)
         except Exception as e:

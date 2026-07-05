@@ -67,6 +67,14 @@
 			inner_onGameLoaded();
 			return;
 		}
+		$(document).ready(function() {
+			$('#toggle-le').change(function() {
+				var isChecked = this.checked;
+				$.post('/set_limited_edition', { enabled: isChecked }, function() {
+					location.reload();
+				});
+			});
+		});
 	</script>
 </head>
 <body class="ego_wide canvas center_fixed_width_app fbx UIPage_LoggedOut liquid hideBanner Locale_en_US">
@@ -216,6 +224,10 @@
 										<a href="#" class="unsel">GameCards</a>
 										<a href="/set_language/it" class="lang-flag{% if language == 'it' %} active{% endif %}" title="Italiano"><img src="img/flag_it.svg" alt="IT"></a>
 										<a href="/set_language/en" class="lang-flag{% if language == 'en' or not language %} active{% endif %}" title="English"><img src="img/flag_en.svg" alt="EN"></a>
+										<label style="margin-left: 15px; color: #4b649d; font-size: 11px; font-weight: bold; cursor: pointer; vertical-align: middle; user-select: none; display: inline-block; line-height: 20px;">
+											<input type="checkbox" id="toggle-le" style="vertical-align: middle; margin-right: 4px;" {% if active_limited_edition %}checked{% endif %}>
+											Display limited edition items
+										</label>
 									</div>
 								</div>
 								<div>
