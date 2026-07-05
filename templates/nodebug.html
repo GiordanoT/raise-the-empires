@@ -13,6 +13,7 @@
 	<link rel="stylesheet" href="css/tooltip_link.css"/>
 	<link rel="stylesheet" href="css/zbar.css"/>
 	<!-- JS -->
+	<script src="//code.jquery.com/jquery-3.4.1.min.js"></script>
 	<script src="js/flash.js"></script>
 	<script src="js/session.js"></script>
 	<script src="js/empires.js"></script>
@@ -46,6 +47,78 @@
 			console.log("Game is loaded " + seen + ", " + popp + ", " + canvas)
 			inner_onGameLoaded();
 			return;
+		}
+
+		var qdExpanded = false;
+		function toggleQuestDebugger() {
+			qdExpanded = !qdExpanded;
+			if (qdExpanded) {
+				$('#qd-content').slideDown(200);
+				$('#qd-toggle-icon').text('▼');
+				loadActiveQuests();
+			} else {
+				$('#qd-content').slideUp(200);
+				$('#qd-toggle-icon').text('▲');
+			}
+		}
+
+		var qdLang = "{{ language }}";
+		var qdI18n = {
+			loading: qdLang === 'it' ? "Caricamento..." : "Loading...",
+			noActive: qdLang === 'it' ? "Nessuna missione attiva" : "No active quests",
+			selectQuest: qdLang === 'it' ? "-- Seleziona una missione --" : "-- Select a quest --",
+			errorLoad: qdLang === 'it' ? "Errore nel caricamento" : "Error loading quests",
+			selectError: qdLang === 'it' ? "Per favore, seleziona una missione!" : "Please select a quest!",
+			completing: qdLang === 'it' ? "Completamento in corso..." : "Completing quest...",
+			success: qdLang === 'it' ? "Completata! Ricarica del gioco..." : "Completed! Reloading game...",
+			errorComplete: qdLang === 'it' ? "Errore durante il completamento" : "Error completing quest"
+		};
+
+		function loadActiveQuests() {
+			$('#qd-quest-select').html('<option value="">' + qdI18n.loading + '</option>');
+			$.getJSON('/get_active_quests', function(data) {
+				var select = $('#qd-quest-select');
+				select.empty();
+				if (!data.quests || data.quests.length === 0) {
+					select.append('<option value="">' + qdI18n.noActive + '</option>');
+				} else {
+					select.append('<option value="">' + qdI18n.selectQuest + '</option>');
+					data.quests.forEach(function(q) {
+						select.append('<option value="' + q.id + '">' + q.title + ' (' + q.id + ')</option>');
+					});
+				}
+			}).fail(function() {
+				$('#qd-quest-select').html('<option value="">' + qdI18n.errorLoad + '</option>');
+			});
+		}
+
+		function forceCompleteQuest() {
+			var questId = $('#qd-quest-select').val();
+			if (!questId) {
+				showQdStatus(qdI18n.selectError);
+				return;
+			}
+			$('#qd-status').css('color', '#3b5998').text(qdI18n.completing).show();
+			$.post('/force_complete_quest', { quest_name: questId }, function(res) {
+				$('#qd-status').css('color', '#42b72a').text(qdI18n.success);
+				setTimeout(function() {
+					location.reload();
+				}, 1500);
+			}).fail(function(xhr) {
+				var err = qdI18n.errorComplete;
+				try {
+					var res = JSON.parse(xhr.responseText);
+					if (res.error) err = res.error;
+				} catch(e) {}
+				showQdStatus(err);
+			});
+		}
+
+		function showQdStatus(msg) {
+			$('#qd-status').css('color', '#d03027').text(msg).show();
+			setTimeout(function() {
+				$('#qd-status').fadeOut(300);
+			}, 3000);
 		}
 	</script>
 </head>
@@ -261,6 +334,27 @@
 					</div>
 				</div>
 			</div>
+		</div>
+	<!-- Quest Debugger Widget -->
+	<div id="quest-debugger" style="position: fixed; bottom: 20px; right: 20px; z-index: 10000; background: #fff; border: 1px solid #3b5998; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; width: 300px; overflow: hidden; transition: all 0.3s ease;">
+		<div style="background: #3b5998; color: #fff; padding: 10px 12px; font-size: 12px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="toggleQuestDebugger()">
+			<span>{% if language == 'it' %}Problemi con le missioni? Clicca qui{% else %}Problems with quests? Click here{% endif %}</span>
+			<span id="qd-toggle-icon">▲</span>
+		</div>
+		<div id="qd-content" style="padding: 12px; display: none; background: #f6f7f9;">
+			<p style="margin: 0 0 8px 0; font-size: 11px; color: #666; line-height: 1.4;">
+				{% if language == 'it' %}La missione è stata completata, ma non risulta? Selezionala qui sotto per forzarne il completamento.{% else %}Has the quest been completed, but not showing up? Select it below to force complete it.{% endif %}
+			</p>
+			<div style="margin-bottom: 10px;">
+				<select id="qd-quest-select" style="width: 100%; padding: 6px; font-size: 12px; border: 1px solid #bdc2c9; border-radius: 4px; background: #fff; box-sizing: border-box;">
+					<option value="">{% if language == 'it' %}Caricamento missioni attive...{% else %}Loading active quests...{% endif %}</option>
+				</select>
+			</div>
+			<div style="display: flex; justify-content: space-between; align-items: center;">
+				<button id="qd-refresh-btn" style="background: #e9ebee; border: 1px solid #ccd0d5; padding: 5px 10px; font-size: 11px; font-weight: bold; border-radius: 3px; cursor: pointer; color: #4e5665;" onclick="loadActiveQuests()">{% if language == 'it' %}Aggiorna{% else %}Refresh{% endif %}</button>
+				<button id="qd-complete-btn" style="background: #42b72a; border: 1px solid #42b72a; padding: 5px 10px; font-size: 11px; font-weight: bold; border-radius: 3px; cursor: pointer; color: #fff;" onclick="forceCompleteQuest()">{% if language == 'it' %}Forza Completamento{% else %}Force Complete{% endif %}</button>
+			</div>
+			<div id="qd-status" style="margin-top: 8px; font-size: 11px; color: #d03027; display: none; font-weight: bold; text-align: center;"></div>
 		</div>
 	</div>
 </body>

@@ -4,7 +4,14 @@ import webbrowser
 import msgspec
 from flask_session.base import MsgSpecSerializer
 
-from quest_settings import quest_titles
+from quest_settings import quest_titles, quest_settings
+
+quest_name_to_key = {}
+for q in quest_settings['quests']['quest']:
+    name = q["_name"]
+    title_val = q.get("_title", "")
+    key = title_val.split(":")[-1] if ":" in title_val else title_val
+    quest_name_to_key[name] = key
 
 os.environ["PBR_VERSION"] = '5.4.3'
 if not os.environ.get('EDITOR'):
@@ -196,6 +203,55 @@ def set_limited_edition():
     prewarm_assets_cache()
     return json.dumps({"success": True}), 200, {"Content-Type": "application/json"}
 
+@app.route('/get_active_quests')
+def get_active_quests():
+    if 'quests' not in session:
+        return json.dumps({"quests": []}), 200, {"Content-Type": "application/json"}
+    lang = request.cookies.get('lang', 'en')
+    lang_file = "it_it.xml" if lang == 'it' else "en_us.xml"
+    path = os.path.join(app.root_path, "assets", "game_configs", lang_file)
+    translations = {}
+    if os.path.exists(path):
+        try:
+            tree = ET.parse(path)
+            root = tree.getroot()
+            for string_elem in root.findall(".//string"):
+                k = string_elem.attrib.get("key", "")
+                orig = string_elem.find("original")
+                if orig is not None and orig.text:
+                    translations[k] = orig.text
+                elif string_elem.text:
+                    translations[k] = string_elem.text
+        except Exception as e:
+            print(f"[get_active_quests] Error parsing {lang_file}: {e}")
+    active = []
+    for q in session['quests']:
+        if not q.get('complete', False):
+            name = q['name']
+            key = quest_name_to_key.get(name)
+            title = translations.get(key, name) if key else name
+            active.append({"id": name, "title": title})
+    return json.dumps({"quests": active}), 200, {"Content-Type": "application/json"}
+
+@app.route('/force_complete_quest', methods=['POST'])
+def force_complete_quest():
+    quest_name = request.form.get('quest_name')
+    if not quest_name:
+        return json.dumps({"success": False, "error": "No quest name"}), 400, {"Content-Type": "application/json"}
+    if 'quests' not in session:
+        return json.dumps({"success": False, "error": "Not logged in"}), 400, {"Content-Type": "application/json"}
+    found = False
+    for q in session['quests']:
+        if q['name'] == quest_name:
+            q['complete'] = True
+            q['completedTasks'] = 65535
+            found = True
+            break
+    if not found:
+        return json.dumps({"success": False, "error": "Quest not found"}), 400, {"Content-Type": "application/json"}
+    session.modified = True
+    return json.dumps({"success": True}), 200, {"Content-Type": "application/json"}
+
 @app.route("/home.html")
 def home():
     print("home")
@@ -264,6 +320,7 @@ def no_debug():
     saves = get_saves()
     return render_template("nodebug.html", time=datetime.now().timestamp(), zid=str(get_zid()),
                            version=version,
+                           language=request.cookies.get('lang', 'en'),
                            allies=json.dumps(get_allies_friend(saves),
                                              default=lambda o: '<not serializable>', sort_keys=False, indent=2),
                            app_friends=json.dumps(get_allies_id(saves)),
