@@ -4,7 +4,7 @@ block_cipher = None
 
 
 a = Analysis(['empires_server.py'],
-             pathex=['C:\\empires'],
+             pathex=['.'],
              binaries=[],
              datas=[],
              hiddenimports=['engineio.async_drivers.threading'],

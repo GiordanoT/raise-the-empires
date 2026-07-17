@@ -66,8 +66,10 @@ def migrate(meta, version, target_version):
         session['user_object']["experiments"]["empire_campv2_enabled"] = 2
         session['user_object']["experiments"]["empire_campaign_mastery"] = 2
         session['save_version'] = version
-    if version and version.startswith("0.08a") and version != target_version:  # upcoming
-        pass
+    if version and version.startswith("0.08a") and version != target_version:
+        create_backup("Update to 2.0")
+        version = target_version
+        session['save_version'] = version
 
 
 def is_0_08a_preview(version):

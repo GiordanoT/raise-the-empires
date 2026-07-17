@@ -79,8 +79,8 @@ except ImportError as error:
 
 # import logging.config
 
-version = "0.08a.2026_02_24"
-release_date = 'Friday, 24 February 2026'
+version = "2.0.2026_07_08"
+release_date = 'Wednesday, 8 July 2026'
 
 COMPRESS_MIMETYPES = ['text/html', 'text/css', 'text/xml', 'application/json', 'application/javascript',
                       'application/x-amf']
@@ -3149,6 +3149,13 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
         prewarm_assets_cache()
+
+    if getattr(sys, 'frozen', False):
+        import logging
+        class SuppressBannerFilter(logging.Filter):
+            def filter(self, record):
+                return "WARNING: This is a development server" not in record.getMessage()
+        logging.getLogger('werkzeug').addFilter(SuppressBannerFilter())
 
     socketio.run(app, host=settings.host, port=settings.port, debug=settings.debug, allow_unsafe_werkzeug=True, use_reloader=False)
     # app.run(host='127.0.0.1', port=5005, debug=True)

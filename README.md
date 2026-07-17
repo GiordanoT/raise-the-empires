@@ -5,7 +5,7 @@
 The Old Empires & Allies preservation project by the Raise the Empires team.
 This project is dedicated to preserving this Flash game so that it's not lost to time.
 
-[![version](https://img.shields.io/badge/version-0.08a--preview1-blue)](#)
+[![version](https://img.shields.io/badge/version-2.0-blue)](#)
 [![size](https://img.shields.io/badge/size-730%20MB-brightgreen)](#)
 [![downloads](https://img.shields.io/github/downloads/AcidCaos/raisetheempires/total?label=downloads%40all)](../../releases/latest)
 
@@ -15,7 +15,8 @@ This project is dedicated to preserving this Flash game so that it's not lost to
 
 | Version | Update | Release date |  Source  | Download |
 | ------- | ------ | ------------ | ------ | -------- |
-| **alpha 0.08a-preview1** | **Titan Update: Part I** | August 27, 2021 | :label: [tag](../../releases/tag/0.08a-preview1) | :tickets: [**Installer**](../../releases/download/0.08a-preview1/empires-setup_0.08a-preview1.exe) |
+| **version 2.0** | **Release 2.0** | July 8, 2026 | :label: [tag](../../releases/tag/2.0.2026_07_08) | :tickets: [**Installer**](../../releases/download/2.0.2026_07_08/empires-setup.exe) |
+| alpha 0.08a-preview1 | Titan Update: Part I | August 27, 2021 | :label: [tag](../../releases/tag/0.08a-preview1) | :tickets: [Installer](../../releases/download/0.08a-preview1/empires-setup_0.08a-preview1.exe) |
 | alpha 0.07a   | Return of the Flash       | January 13, 2021   | :label: [tag](../../releases/tag/0.07a) | :tickets: [Installer](../../releases/download/0.07a/empires-setup_0.07a.exe) |
 | alpha 0.06a   | Invasion Update       | July 11, 2020   | :label: [tag](../../releases/tag/0.06a) | :tickets: [Installer](../../releases/download/0.06a/empires-setup_0.06a.exe) |
 | alpha 0.05a   | Multiplayer Update       | February 3, 2020   | :label: [tag](../../releases/tag/0.05a) | :tickets: [Installer](../../releases/download/0.05a/empires-setup_0.05.exe) |

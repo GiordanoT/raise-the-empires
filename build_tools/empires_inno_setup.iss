@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "RaiseTheEmpires"
-#define MyAppVersion "0.08a"
+#define MyAppVersion "2.0"
 #define MyAppPublisher "RaiseTheEmpires"
 #define MyAppURL "https://github.com/AcidCaos/raisetheempires"
 #define MyAppExeName "empires_server.exe"
